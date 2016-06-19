@@ -41,12 +41,13 @@ func main() {
 		os.Exit(3)
 	}
 
-	//var svc common.Service
+	// var svc common.Service
 	if *s {
 		if _, err = server.NewServer(cfg); err != nil {
 			fmt.Printf("start server error, %s.\n", err.Error())
 			os.Exit(4)
 		}
+		cfg.Server = true
 	}
 
 	if *c {
@@ -54,5 +55,6 @@ func main() {
 			fmt.Printf("start client error, %s.\n", err.Error())
 			os.Exit(4)
 		}
+		cfg.Server = false
 	}
 }

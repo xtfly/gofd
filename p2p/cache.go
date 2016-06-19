@@ -1,11 +1,12 @@
 package p2p
 
 import (
-	"log"
 	"math"
 	"sort"
 	"sync/atomic"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 type CacheProvider interface {

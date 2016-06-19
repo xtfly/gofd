@@ -20,7 +20,7 @@ type Server struct {
 
 func NewServer(cfg *common.Config) (*Server, error) {
 	s := &Server{
-		cache: gokits.NewCache(30 * time.Second),
+		cache: gokits.NewCache(5 * time.Minute),
 	}
 	s.BaseService = *common.NewBaseService(cfg, s)
 	return s, nil

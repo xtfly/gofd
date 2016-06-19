@@ -14,7 +14,7 @@ type Config struct {
 	Name   string `yaml:"name"`
 	Server bool   //是否为服务端
 
-	DownDir string `yaml:"downdir"` //只有客户端才配置
+	DownDir string `yaml:"downdir,omitempty"` //只有客户端才配置
 
 	Log struct {
 		Level     string `yaml:"level"`

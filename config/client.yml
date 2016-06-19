@@ -4,8 +4,8 @@ log:
     level: INFO
 net:
     ip: 127.0.0.1
-    mgntPort: 45001
-    dataPort: 45002
+    mgntPort: 45010
+    dataPort: 45011
     tls:
         cert: /Users/xiao/gop2p.cert
         key: /Users/xiao/gop2p.key
@@ -13,5 +13,4 @@ auth:
     username: gop2p
     passowrd: AFDAFAFEWFAGAGAGAG
 contorl:
-    upspeed: 10M
-    downspeed: 10M
+    speed: 10

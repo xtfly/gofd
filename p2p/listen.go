@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"net"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/xtfly/gofd/common"
 )
 

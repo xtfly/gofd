@@ -3,7 +3,8 @@ package p2p
 import (
 	"errors"
 	"io"
-	"log"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // Interface for a file.
