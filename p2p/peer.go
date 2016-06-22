@@ -8,24 +8,26 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const MAX_OUR_REQUESTS = 2
-const MAX_PEER_REQUESTS = 10
+const (
+	// 最多从其它Peer发送请求
+	MAX_OUR_REQUESTS = 5
 
-// 每次下块的大小
-const STANDARD_BLOCK_LENGTH = 16 * 1024
+	// 最多允许其它Peer向本Peer请求
+	MAX_PEER_REQUESTS = 10
+)
 
 // 下载端
 type peer struct {
-	taskId   string
-	address  string
-	conn     net.Conn
-	upstream bool //是否是上游节点，即连接到其它的节点，而不是其它节点连入本节点
+	taskId   string   // 任务标识
+	address  string   // 对端地址
+	conn     net.Conn // 物理连接
+	upstream bool     // 是否是上游节点，即连接到其它的节点，而不是其它节点连入本节点
 
 	writeChan         chan []byte
 	writeQueueingChan chan []byte
 
 	lastReadTime time.Time
-	have         *Bitset // What the peer has told us it has
+	have         *Bitset // 对端已有的Piece
 
 	peerRequests map[uint64]bool
 	ourRequests  map[uint64]time.Time // What we requested, when we requested it
@@ -100,24 +102,11 @@ func (p *peer) keepAlive(now time.Time) {
 // There's two goroutines per peer, one to read data from the peer, the other to
 // send data to the peer.
 
-func uint32ToBytes(buf []byte, n uint32) {
-	buf[0] = byte(n >> 24)
-	buf[1] = byte(n >> 16)
-	buf[2] = byte(n >> 8)
-	buf[3] = byte(n)
-}
-
 func writeNBOUint32(conn net.Conn, n uint32) (err error) {
 	var buf []byte = make([]byte, 4)
 	uint32ToBytes(buf, n)
 	_, err = conn.Write(buf[0:])
 	return
-}
-
-func bytesToUint32(buf []byte) uint32 {
-	return (uint32(buf[0]) << 24) |
-		(uint32(buf[1]) << 16) |
-		(uint32(buf[2]) << 8) | uint32(buf[3])
 }
 
 func readNBOUint32(conn net.Conn) (n uint32, err error) {

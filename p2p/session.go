@@ -40,13 +40,13 @@ type P2pSession struct {
 	fileStore FileStore
 
 	// 下载过程中的Pieces信息
-	pieceSet        *Bitset // The pieces we have
+	pieceSet        *Bitset // 已存在Piece
 	totalPieces     int     // 整个Piece个数
 	totalSize       int64   // 所有文件大小
 	lastPieceLength int     // 最一块Piece的长度
 	goodPieces      int     // 已下载的Piece个数
 
-	//
+	// 正在下载的Piece
 	activePieces map[int]*ActivePiece
 
 	//
@@ -57,7 +57,7 @@ type P2pSession struct {
 	//
 	trackerReportChan chan ClientStatusReport
 
-	//
+	// Peer信息
 	addPeerChan     chan *P2pConn
 	peers           map[string]*peer
 	peerMessageChan chan peerMessage
@@ -123,7 +123,6 @@ func (s *P2pSession) init() {
 }
 
 func (s *P2pSession) initInServer() {
-	// init
 	s.init()
 
 	s.goodPieces = int(s.totalPieces)
@@ -134,7 +133,6 @@ func (s *P2pSession) initInServer() {
 }
 
 func (s *P2pSession) initInClient() {
-	// init
 	s.init()
 
 	// 客户端与服务端的下载路径不同，修改路径
@@ -165,7 +163,8 @@ func (s *P2pSession) initInClient() {
 	}
 
 	// 找到分发路径中位置
-	self := fmt.Sprintf("%s:%v", s.g.cfg.Net.IP, s.g.cfg.Net.DataPort)
+	net := s.g.cfg.Net
+	self := fmt.Sprintf("%s:%v", net.IP, net.DataPort)
 	addrs := s.m.LinkChain.DispatchAddrs
 	count := len(addrs)
 	for idx := count - 1; idx > 0; idx-- {
@@ -174,6 +173,7 @@ func (s *P2pSession) initInClient() {
 			break
 		}
 	}
+
 	// 尝试与上一个节点建立连接
 	s.tryNewPeer()
 
@@ -185,14 +185,14 @@ func (s *P2pSession) initPeersBitset() {
 	for _, p := range s.peers {
 		if p.have.n != s.totalPieces {
 			if p.have.n != 0 {
-				panic("Expected p.have.n == 0")
+				log.Panic("Expected p.have.n == 0")
 			}
 			p.have = NewBitset(s.totalPieces)
 		}
 	}
 }
 
-// 连接
+// 寻找可用的地址并连接
 func (s *P2pSession) tryNewPeer() {
 	addrs := s.m.LinkChain.DispatchAddrs
 	if s.connFailCount >= MAX_RETRY_CONNECT_TIMES {
@@ -327,7 +327,7 @@ func (ts *P2pSession) removeRequest(piece, block int) {
 	}
 }
 
-// 产生并发送消息
+// 接收Peer消息并发送消息
 func (ts *P2pSession) DoMessage(p *peer, message []byte) (err error) {
 	if message == nil {
 		return io.EOF // The reader or writer goroutine has exited
@@ -345,23 +345,26 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 	messageID := message[0]
 
 	switch messageID {
-	case HAVE:
+	case HAVE: // 处理Peer发送过来的HAVE消息
 		if len(message) != 5 {
 			return errors.New("Unexpected length")
 		}
 		n := bytesToUint32(message[1:])
 		if n < uint32(p.have.n) {
 			p.have.Set(int(n))
+			s.RequestBlock(p) // 向请此Peer上请求发送块
 		} else {
 			return errors.New("have index is out of range")
 		}
-	case BITFIELD:
+	case BITFIELD: // 处理Peer发送过来的BITFIELD消息
 		log.Info("[", s.taskId, "] bitfield", p.address)
 		p.have = NewBitsetFromBytes(s.totalPieces, message[1:])
-		if p.have == nil {
+		if p.have != nil {
+			s.RequestBlock(p) // 向请此Peer上请求发送块
+		} else {
 			return errors.New("Invalid bitfield data")
 		}
-	case REQUEST:
+	case REQUEST: // 处理Peer发送过来的REQUEST消息
 		log.Info("[", s.taskId, "] request", p.address)
 		if len(message) != 13 {
 			return errors.New("Unexpected message length")
@@ -383,7 +386,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		}
 		// TODO: Asynchronous
 		return s.sendRequest(p, index, begin, length)
-	case PIECE:
+	case PIECE: // 处理Peer发送过来的PIECE消息
 		// piece
 		if len(message) < 9 {
 			return errors.New("unexpected message length")
@@ -395,7 +398,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 			return errors.New("piece out of range")
 		}
 		if s.pieceSet.IsSet(int(index)) {
-			break // We already have that piece, keep going
+			break //  本Peer已存在此Piece，则继续
 		}
 		if int64(begin) >= s.m.PieceLen {
 			return errors.New("begin out of range")
@@ -403,7 +406,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		if int64(begin)+int64(length) > s.m.PieceLen {
 			return errors.New("begin + length out of range")
 		}
-		if length > 128*1024 {
+		if length > MAX_BLOCK_LENGTH {
 			return errors.New("Block length too large")
 		}
 
@@ -412,10 +415,9 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		if err != nil {
 			return err
 		}
-
+		// 存储块的信息
 		s.RecordBlock(p, index, begin, uint32(length))
-		err = s.RequestBlock(p)
-
+		err = s.RequestBlock(p) // 继续向此Peer请求发送块信息
 	default:
 		return fmt.Errorf("Uknown message id: %d\n", messageID)
 	}
@@ -448,57 +450,52 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	requestIndex := (uint64(piece) << 32) | uint64(begin)
 	delete(p.ourRequests, requestIndex)
 	v, ok := s.activePieces[int(piece)]
-	if ok {
-		s.Downloaded += int64(length)
-
-		if v.isComplete() {
-			delete(s.activePieces, int(piece))
-			var pieceBytes []byte
-			ok, err, pieceBytes = checkPiece(s.fileStore, s.totalSize, s.m, int(piece))
-			if !ok || err != nil {
-				log.Println("[", s.taskId, "] Closing peer that sent a bad piece", piece, err)
-				p.Close()
-				return
-			}
-
-			// 提交文件存储
-			s.fileStore.Commit(int(piece), pieceBytes, s.m.PieceLen*int64(piece))
-			s.Left -= int64(v.pieceLength)
-			s.pieceSet.Set(int(piece))
-			s.goodPieces++
-
-			var percentComplete float32
-			if s.totalPieces > 0 {
-				percentComplete = float32(s.goodPieces*100) / float32(s.totalPieces)
-			}
-			log.Println("[", s.taskId, "] Have", s.goodPieces, "of", s.totalPieces,
-				"pieces", percentComplete, "% complete")
-			if s.goodPieces == s.totalPieces {
-				// TODO 下载完成，上报状态
-				// if !ts.trackerLessMode {
-				// 	ts.fetchTrackerInfo("completed")
-				// }
-				// TODO: Drop connections to all seeders.
-			}
-
-			// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，
-			// 并把该消息发送给所有与客户端建立连接的peer。
-			for _, p := range s.peers {
-				if p.have != nil {
-					if int(piece) < p.have.n && p.have.IsSet(int(piece)) {
-						// We don't do anything special. We rely on the caller
-						// to decide if this peer is still interesting.
-					} else {
-						haveMsg := make([]byte, 5)
-						haveMsg[0] = HAVE
-						uint32ToBytes(haveMsg[1:5], piece)
-						p.sendMessage(haveMsg)
-					}
-				}
-			}
-		}
-	} else {
+	if !ok {
 		log.Println("[", s.taskId, "] Received a block we already have.", piece, block, p.address)
+		return
+	}
+
+	s.Downloaded += int64(length)
+	if !v.isComplete() {
+		return
+	}
+
+	// 完成下载，清理资源，提交文件
+	delete(s.activePieces, int(piece))
+	var pieceBytes []byte
+	ok, err, pieceBytes = checkPiece(s.fileStore, s.totalSize, s.m, int(piece))
+	if !ok || err != nil {
+		log.Println("[", s.taskId, "] Closing peer that sent a bad piece", piece, err)
+		p.Close()
+		return
+	}
+
+	// 提交文件存储
+	s.fileStore.Commit(int(piece), pieceBytes, s.m.PieceLen*int64(piece))
+	s.Left -= int64(v.pieceLength)
+	s.pieceSet.Set(int(piece))
+	s.goodPieces++
+
+	var percentComplete float32
+	if s.totalPieces > 0 {
+		percentComplete = float32(s.goodPieces*100) / float32(s.totalPieces)
+	}
+	log.Println("[", s.taskId, "] Have", s.goodPieces, "of", s.totalPieces,
+		"pieces", percentComplete, "% complete")
+	if s.goodPieces == s.totalPieces {
+		// TODO 下载完成，上报状态
+	}
+
+	// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，
+	// 并把该消息发送给所有与客户端建立连接的peer。
+	for _, p := range s.peers {
+		if p.have != nil &&
+			(int(piece) >= p.have.n || !p.have.IsSet(int(piece))) {
+			haveMsg := make([]byte, 5)
+			haveMsg[0] = HAVE
+			uint32ToBytes(haveMsg[1:5], piece)
+			p.sendMessage(haveMsg)
+		}
 	}
 
 	return
@@ -518,6 +515,7 @@ func (s *P2pSession) ChoosePiece(p *peer) (piece int) {
 func (s *P2pSession) checkRange(p *peer, start, end int) (piece int) {
 	clampedEnd := min(end, min(p.have.n, s.pieceSet.n))
 	for i := start; i < clampedEnd; i++ {
+		// 本Peer没有，但其它Peer存在时
 		if (!s.pieceSet.IsSet(i)) && p.have.IsSet(i) {
 			return i
 		}
@@ -617,6 +615,7 @@ func (ts *P2pSession) shutdown() (err error) {
 	for _, peer := range ts.peers {
 		ts.ClosePeer(peer)
 	}
+
 	if ts.fileStore != nil {
 		err = ts.fileStore.Close()
 		if err != nil {

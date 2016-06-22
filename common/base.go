@@ -82,6 +82,7 @@ func (s *BaseService) OnStart(c *Config, e *echo.Echo) error { return nil }
 func (s *BaseService) Stop() bool {
 	if atomic.CompareAndSwapUint32(&s.running, 1, 0) {
 		s.svc.OnStop(s.cfg, s.echo)
+		// TODO echo server to stop
 		return true
 	} else {
 		return false

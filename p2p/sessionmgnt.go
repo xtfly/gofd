@@ -6,13 +6,10 @@ import (
 )
 
 type global struct {
-	cfg *common.Config
+	cfg *common.Config // 全局配置
 
-	// 读取文件
-	fsProvider FsProvider
-
-	// 用于缓存块信息
-	cacher CacheProvider
+	fsProvider FsProvider    // 读取文件
+	cacher     CacheProvider // 用于缓存块信息
 }
 
 type P2pSessionMgnt struct {

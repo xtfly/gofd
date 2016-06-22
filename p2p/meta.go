@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 )
 
@@ -33,7 +32,7 @@ type FileStoreFileAdapter struct {
 
 func (f *FileStoreFileSystemAdapter) Open(name []string, length int64) (file File, err error) {
 	var ff MetaInfoFile
-	ff, err = os.Open(path.Join(name...))
+	ff, err = os.Open(filepath.Join(name...))
 	if err != nil {
 		return
 	}
@@ -82,7 +81,7 @@ func (m *MetaInfo) addFiles(fileInfo os.FileInfo, file string) (err error) {
 
 	fileDict := FileDict{Length: fileInfo.Size()}
 	cleanFile := filepath.Clean(file)
-	fileDict.Path, fileDict.Name = path.Split(cleanFile)
+	fileDict.Path, fileDict.Name = filepath.Split(cleanFile)
 	fileDict.Sum, err = sha1Sum(file)
 	if err != nil {
 		return err

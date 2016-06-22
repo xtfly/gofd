@@ -7,11 +7,20 @@ import (
 	"runtime"
 )
 
+const (
+	// 每个Piece分成多个Block，每次下载块的大小
+	STANDARD_BLOCK_LENGTH = 16 * 1024
+
+	// 最大块的长度
+	MAX_BLOCK_LENGTH = 128 * 1024
+)
+
 type chunk struct {
 	i    int64
 	data []byte
 }
 
+// 根据元数据信息，在文件中检查已下载的位图信息，有多少好的Piece，有多少块的Piece
 func checkPieces(fs FileStore, totalLength int64, m *MetaInfo) (good, bad int, goodBits *Bitset, err error) {
 	pieceLength := m.PieceLen
 	numPieces := int((totalLength + pieceLength - 1) / pieceLength)
@@ -36,15 +45,6 @@ func checkPieces(fs FileStore, totalLength int64, m *MetaInfo) (good, bad int, g
 		}
 	}
 	return
-}
-
-func checkEqual(ref, current []byte) bool {
-	for i := 0; i < len(current); i++ {
-		if ref[i] != current[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // computeSums reads the file content and computes the SHA1 hash for each
