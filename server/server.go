@@ -33,10 +33,10 @@ func NewServer(cfg *common.Config) (*Server, error) {
 func (s *Server) OnStart(c *common.Config, e *echo.Echo) error {
 	go func() { s.sessionMgnt.Start() }()
 
-	cmf := setServerToContext(s)
-	e.POST("/api/v1/server/tasks", CreateTask, cmf)
-	e.DELETE("/api/v1/server/tasks/:id", CancelTask, cmf)
-	e.GET("/api/v1/server/tasks/:id", QueryTask, cmf)
+	e.POST("/api/v1/server/tasks", s.CreateTask)
+	e.DELETE("/api/v1/server/tasks/:id", s.CancelTask)
+	e.GET("/api/v1/server/tasks/:id", s.QueryTask)
+	e.POST("/api/v1/server/tasks/:id/status", s.ReportTask)
 
 	return nil
 }
@@ -45,11 +45,11 @@ func (s *Server) OnStop(c *common.Config, e *echo.Echo) {
 	go func() { s.sessionMgnt.Stop() }()
 }
 
-func setServerToContext(s *Server) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			c.Set(CXT_SERVER, s)
-			return next(c)
-		}
-	}
-}
+// func setServerToContext(svc *Server) echo.MiddlewareFunc {
+// 	return func(next echo.HandlerFunc) echo.HandlerFunc {
+// 		return func(c echo.Context) error {
+// 			c.Set(CXT_SERVER, svc)
+// 			return next(c)
+// 		}
+// 	}
+// }

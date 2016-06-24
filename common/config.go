@@ -1,7 +1,10 @@
 package common
 
 import (
+	"errors"
+	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -11,8 +14,8 @@ import (
 
 // 定义配置映射的结构体
 type Config struct {
-	Name   string `yaml:"name"`
 	Server bool   //是否为服务端
+	Name   string `yaml:"name"`
 
 	DownDir string `yaml:"downdir,omitempty"` //只有客户端才配置
 
@@ -27,6 +30,9 @@ type Config struct {
 		IP       string `yaml:"ip"`
 		MgntPort int    `yaml:"mgntPort"`
 		DataPort int    `yaml:"dataPort"`
+
+		ClientMgntPort int `yaml:"clientMgntPort,omitempty"`
+		ClientDataPort int `yaml:"clientDataPort,omitempty"`
 
 		Tls *struct {
 			Cert string `yaml:"cert"`
@@ -59,6 +65,14 @@ func (c *Config) defaultValue() {
 	if !strings.HasPrefix(c.DownDir, "/") {
 		c.DownDir = filepath.Join(gokits.GetProcPwd(), c.DownDir)
 	}
+	f, err := os.Stat(c.DownDir)
+	if err == nil || os.IsExist(err) {
+		os.Mkdir(c.DownDir, os.ModePerm)
+	}
+	if !f.IsDir() {
+		fmt.Printf("DownDir is not a directory")
+		os.Exit(6)
+	}
 
 	if c.Log.FileCount == 0 {
 		c.Log.FileCount = 10
@@ -74,17 +88,52 @@ func (c *Config) defaultValue() {
 	if c.Control == nil {
 		c.Control = &Control{Speed: 10, MaxActive: 5, CacheSize: 50}
 	}
+
+	if c.Control.Speed == 0 {
+		c.Control.Speed = 10
+	}
+	if c.Control.MaxActive == 0 {
+		c.Control.MaxActive = 5
+	}
+	if c.Control.CacheSize == 0 {
+		c.Control.CacheSize = 50
+	}
 }
 
-func ParserConfig(cfgfile string) (*Config, error) {
+func (c *Config) validate() error {
+	if c.Server {
+		if c.Net.ClientMgntPort == 0 {
+			return errors.New("Not set Net.ClientMgntPort in server config file")
+		}
+		if c.Net.ClientDataPort == 0 {
+			return errors.New("Not set Net.ClientDataPort in server config file")
+		}
+	}
+
+	if !c.Server {
+		if c.DownDir == "" {
+			return errors.New("Not set DownDir in client config file")
+		}
+	}
+
+	return nil
+}
+
+func ParserConfig(cfgfile string, server bool) (*Config, error) {
 	ncfg := normalFile(cfgfile)
 	if bs, err := ioutil.ReadFile(ncfg); err != nil {
 		return nil, err
 	} else {
 		cfg := new(Config)
+		cfg.Server = server
 		if err := yaml.Unmarshal(bs, cfg); err != nil {
 			return nil, err
 		}
+
+		if err := cfg.validate(); err != nil {
+			return nil, err
+		}
+
 		cfg.defaultValue()
 		return cfg, nil
 	}

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/xtfly/gofd/client"
 	"github.com/xtfly/gofd/common"
@@ -29,32 +30,47 @@ func main() {
 	}
 
 	if flag.NArg() < 1 {
-		fmt.Println("miss configfile")
+		fmt.Println("miss config file")
 		usage()
 	}
 
 	cfgfile := flag.Args()[0]
 	var cfg *common.Config
 	var err error
-	if cfg, err = common.ParserConfig(cfgfile); err != nil {
+	if cfg, err = common.ParserConfig(cfgfile, *s); err != nil {
 		fmt.Printf("parser config file %s error, %s.\n", cfgfile, err.Error())
 		os.Exit(3)
 	}
 
-	// var svc common.Service
+	var svc common.Service
 	if *s {
-		if _, err = server.NewServer(cfg); err != nil {
+		if svc, err = server.NewServer(cfg); err != nil {
 			fmt.Printf("start server error, %s.\n", err.Error())
 			os.Exit(4)
 		}
-		cfg.Server = true
 	}
 
 	if *c {
-		if _, err = client.NewClient(cfg); err != nil {
+		if svc, err = client.NewClient(cfg); err != nil {
 			fmt.Printf("start client error, %s.\n", err.Error())
 			os.Exit(4)
 		}
-		cfg.Server = false
 	}
+
+	go func() {
+		quitChan := listenSigInt()
+		select {
+		case <-quitChan:
+			fmt.Printf("got control-C")
+			svc.Stop()
+		}
+	}()
+
+	svc.Start()
+}
+
+func listenSigInt() chan os.Signal {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	return c
 }

@@ -1,5 +1,5 @@
 name: client
-downdir: /Users/xiao
+downdir: /Users/xiao/download
 log:
     level: INFO
 net:
@@ -7,10 +7,11 @@ net:
     mgntPort: 45010
     dataPort: 45011
     tls:
-        cert: /Users/xiao/gop2p.cert
-        key: /Users/xiao/gop2p.key
+        cert: /Users/xiao/server.cert
+        key: /Users/xiao/server.key
 auth:
-    username: gop2p
+    username: gofd
     passowrd: AFDAFAFEWFAGAGAGAG
 contorl:
-    speed: 10
+    cacheSize: 50 # unit is MB
+    maxActive: 10

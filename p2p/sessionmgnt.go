@@ -17,9 +17,9 @@ type P2pSessionMgnt struct {
 
 	quitChan chan struct{} // 退出
 
-	createSessChan chan *MetaInfo   // 要创建的Task
-	startSessChan  chan *P2pSession // 要启动的Task
-	stopSessChan   chan string      // 要关闭的Task
+	createSessChan chan *DispatchTask // 要创建的Task
+	startSessChan  chan *P2pSession   // 要启动的Task
+	stopSessChan   chan string        // 要关闭的Task
 	sessions       map[string]*P2pSession
 }
 
@@ -31,7 +31,7 @@ func NewSessionMgnt(cfg *common.Config) *P2pSessionMgnt {
 			cacher:     NewRamCacheProvider(cfg.Control.CacheSize)},
 
 		quitChan:       make(chan struct{}, 1),
-		createSessChan: make(chan *MetaInfo, cfg.Control.MaxActive),
+		createSessChan: make(chan *DispatchTask, cfg.Control.MaxActive),
 		startSessChan:  make(chan *P2pSession, 1),
 		stopSessChan:   make(chan string, 1),
 		sessions:       make(map[string]*P2pSession),
@@ -86,10 +86,10 @@ func (sm *P2pSessionMgnt) Stop() {
 }
 
 // 启动一个任务
-func (sm *P2pSessionMgnt) RunTask(mi *MetaInfo) {
-	go func(mi *MetaInfo) {
-		sm.createSessChan <- mi
-	}(mi)
+func (sm *P2pSessionMgnt) RunTask(dt *DispatchTask) {
+	go func(dt *DispatchTask) {
+		sm.createSessChan <- dt
+	}(dt)
 }
 
 // 停止一下任务

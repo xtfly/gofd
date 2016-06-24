@@ -5,14 +5,14 @@ import (
 )
 
 //----------------------------------------
-// create a task message body
+// 创建分发任务
 type Task struct {
 	Id            string   `json:"id"`
 	DispatchFiles []string `json:"dispatchFiles"`
 	DestIPs       []string `json:"destIPs"`
 }
 
-// query a task info message body
+// 查询分发任务
 type TaskInfo struct {
 	Id     string `json:"id"`
 	Status string `json:"status"`
@@ -20,11 +20,11 @@ type TaskInfo struct {
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
 
-	DispatchInfos []DispatchInfo `json:"dispatchInfos,omitempty"`
+	DispatchInfos map[string]DispatchInfo `json:"dispatchInfos,omitempty"`
 }
 
+// 单个IP的分发信息
 type DispatchInfo struct {
-	IP     string `json:"ip"`
 	Status string `json:"status"`
 
 	StartedAt  time.Time `json:"startedAt"`
@@ -33,12 +33,13 @@ type DispatchInfo struct {
 	DispatchFiles []DispatchFile `json:"dispatchFiles"`
 }
 
+// 单个文件分发状态
 type DispatchFile struct {
 	FileName string `json:"filename"`
 	Status   string `json:"status"`
 }
 
-// Task status type
+// 任务状态
 type TaskStatus int
 
 const (
@@ -81,7 +82,7 @@ func (ts TaskStatus) String() string {
 }
 
 //----------------------------------------
-// one files meta info
+// 一个文件的元数据信息
 type FileDict struct {
 	Length int64  `json:"length"`
 	Path   string `json:"path"`
@@ -89,17 +90,24 @@ type FileDict struct {
 	Sum    string `json:"sum"`
 }
 
-// all files meta info
+// 一个任务内所有文件的元数据信息
 type MetaInfo struct {
-	TaskId    string
-	LinkChain LinkChain
-	Length    int64      `json:"length"`
-	Sum       string     `json:"sum"`
-	PieceLen  int64      `json:"PieceLen"`
-	Pieces    string     `json:"pieces"`
-	Files     []FileDict `json:"files"` // Multiple File
+	Length   int64      `json:"length"`
+	Sum      string     `json:"sum"`
+	PieceLen int64      `json:"PieceLen"`
+	Pieces   string     `json:"pieces"`
+	Files    []FileDict `json:"files"` // Multiple File
 }
 
+// 下发给客户端的分发任务
+type DispatchTask struct {
+	TaskId    string     `json:"taskId"`
+	LinkChain *LinkChain `json:"linkChain"`
+	MetaInfo  *MetaInfo  `json:"metaInfo"`
+	Speed     int64      `json:"speed"`
+}
+
+// 分发路径
 type LinkChain struct {
 	// 软件分发的路径，要求服务端的地址排在第一个
 	DispatchAddrs []string `json:"dispatchAddrs"`
@@ -107,7 +115,7 @@ type LinkChain struct {
 	ServerAddr string `json:"serverAddr"`
 }
 
-// data connection header
+// 连接认证消息头
 type Header struct {
 	Len      int32
 	TaskId   string

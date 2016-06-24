@@ -10,15 +10,15 @@ import (
 )
 
 func (s *BaseService) HttpGet(addr, urlpath string) (rspBody []byte, err error) {
-	return sendHttpReq(s.cfg, "GET", addr, urlpath, nil)
+	return sendHttpReq(s.Cfg, "GET", addr, urlpath, nil)
 }
 
 func (s *BaseService) HttpPost(addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
-	return sendHttpReq(s.cfg, "POST", addr, urlpath, reqBody)
+	return sendHttpReq(s.Cfg, "POST", addr, urlpath, reqBody)
 }
 
 func (s *BaseService) HttpDelete(addr, urlpath string) (err error) {
-	_, err = sendHttpReq(s.cfg, "DELETE", addr, urlpath, nil)
+	_, err = sendHttpReq(s.Cfg, "DELETE", addr, urlpath, nil)
 	return
 }
 
@@ -28,7 +28,7 @@ func sendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rsp
 	}
 	client := &http.Client{Transport: tr}
 
-	url := fmt.Sprintf("https://%s/%s", addr, urlpath)
+	url := fmt.Sprintf("https://%s:%v/%s", addr, cfg.Net.ClientMgntPort, urlpath)
 	req, err := http.NewRequest(method, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/xtfly/gofd/flowctrl"
 )
 
 const (
@@ -23,8 +24,8 @@ type peer struct {
 	conn     net.Conn // 物理连接
 	upstream bool     // 是否是上游节点，即连接到其它的节点，而不是其它节点连入本节点
 
-	writeChan         chan []byte
-	writeQueueingChan chan []byte
+	writeChan      chan []byte
+	flowctrlWriter *flowctrl.Writer
 
 	lastReadTime time.Time
 	have         *Bitset // 对端已有的Piece
@@ -38,52 +39,17 @@ type peerMessage struct {
 	message []byte // nil means an error occurred
 }
 
-func NewPeer(conn *P2pConn) *peer {
+func NewPeer(c *P2pConn, speed int64) *peer {
 	writeChan := make(chan []byte)
-	writeQueueingChan := make(chan []byte)
-	go queueingWriter(writeChan, writeQueueingChan)
 	return &peer{
-		conn:              conn.conn,
-		upstream:          conn.upstream,
-		address:           conn.remoteAddr.String(),
-		writeChan:         writeChan,
-		writeQueueingChan: writeQueueingChan,
-		peerRequests:      make(map[uint64]bool, MAX_PEER_REQUESTS),
-		ourRequests:       make(map[uint64]time.Time, MAX_OUR_REQUESTS),
+		conn:           c.conn,
+		upstream:       c.upstream,
+		address:        c.remoteAddr.String(),
+		writeChan:      writeChan,
+		flowctrlWriter: flowctrl.NewWriter(c.conn, speed),
+		peerRequests:   make(map[uint64]bool, MAX_PEER_REQUESTS),
+		ourRequests:    make(map[uint64]time.Time, MAX_OUR_REQUESTS),
 	}
-}
-
-func queueingWriter(in, out chan []byte) {
-	queue := make(map[int][]byte)
-	head, tail := 0, 0
-L:
-	for {
-		if head == tail {
-			select {
-			case m, ok := <-in:
-				if !ok {
-					break L
-				}
-				queue[head] = m
-				head++
-			}
-		} else {
-			select {
-			case m, ok := <-in:
-				if !ok {
-					break L
-				}
-				queue[head] = m
-				head++
-			case out <- queue[tail]:
-				delete(queue, tail)
-				tail++
-			}
-		}
-	}
-	// We throw away any messages waiting to be sent, including the
-	// nil message that is automatically sent when the in channel is closed
-	close(out)
 }
 
 func (p *peer) Close() {
@@ -99,34 +65,13 @@ func (p *peer) keepAlive(now time.Time) {
 	p.sendMessage([]byte{})
 }
 
-// There's two goroutines per peer, one to read data from the peer, the other to
-// send data to the peer.
-
-func writeNBOUint32(conn net.Conn, n uint32) (err error) {
-	var buf []byte = make([]byte, 4)
-	uint32ToBytes(buf, n)
-	_, err = conn.Write(buf[0:])
-	return
-}
-
-func readNBOUint32(conn net.Conn) (n uint32, err error) {
-	var buf [4]byte
-	_, err = conn.Read(buf[0:])
-	if err != nil {
-		return
-	}
-	n = bytesToUint32(buf[0:])
-	return
-}
-
 // This func is designed to be run as a goroutine. It
 // listens for messages on a channel and sends them to a peer.
-
 func (p *peer) peerWriter(errorChan chan peerMessage) {
 	log.Info("[", p.taskId, "] Writing messages")
 	var lastWriteTime time.Time
 
-	for msg := range p.writeQueueingChan {
+	for msg := range p.writeChan {
 		now := time.Now()
 		if len(msg) == 0 {
 			// This is a keep-alive message.
@@ -140,12 +85,12 @@ func (p *peer) peerWriter(errorChan chan peerMessage) {
 		lastWriteTime = now
 
 		log.Debug("[", p.taskId, "] Writing", uint32(len(msg)), p.conn.RemoteAddr())
-		err := writeNBOUint32(p.conn, uint32(len(msg)))
+		err := writeNBOUint32(p.flowctrlWriter, uint32(len(msg)))
 		if err != nil {
 			log.Println(err)
 			break
 		}
-		_, err = p.conn.Write(msg)
+		_, err = p.flowctrlWriter.Write(msg)
 		if err != nil {
 			log.Error("[", p.taskId, "] Failed to write a message", p.address, len(msg), msg, err)
 			break
@@ -167,7 +112,7 @@ func (p *peer) peerReader(msgChan chan peerMessage) {
 		if err != nil {
 			break
 		}
-		if n > 130*1024 {
+		if n > MAX_BLOCK_LENGTH {
 			log.Println("[", p.taskId, "] Message size too large: ", n)
 			break
 		}

@@ -20,7 +20,7 @@ type Service interface {
 
 type BaseService struct {
 	running uint32 // atomic
-	cfg     *Config
+	Cfg     *Config
 	echo    *echo.Echo
 	svc     Service
 }
@@ -28,7 +28,7 @@ type BaseService struct {
 func NewBaseService(cfg *Config, svc Service) *BaseService {
 	return &BaseService{
 		running: 0,
-		cfg:     cfg,
+		Cfg:     cfg,
 		echo:    echo.New(),
 		svc:     svc,
 	}
@@ -36,7 +36,7 @@ func NewBaseService(cfg *Config, svc Service) *BaseService {
 
 // init log by config
 func (s *BaseService) initlog() {
-	cfglog := s.cfg.Log
+	cfglog := s.Cfg.Log
 	if cfglog.File != "" {
 		log.AddHook(rfile.NewHook(cfglog.File, cfglog.FileSize, cfglog.FileCount))
 	}
@@ -50,7 +50,7 @@ func (s *BaseService) initlog() {
 }
 
 func (s *BaseService) runEcho() error {
-	net := s.cfg.Net
+	net := s.Cfg.Net
 	var sr *standard.Server
 	if net.Tls != nil {
 		sr = standard.WithTLS(fmt.Sprintf("%s:%v", net.IP, net.MgntPort),
@@ -68,7 +68,7 @@ func (s *BaseService) runEcho() error {
 func (s *BaseService) Start() error {
 	if atomic.CompareAndSwapUint32(&s.running, 0, 1) {
 		s.initlog()
-		if err := s.svc.OnStart(s.cfg, s.echo); err != nil {
+		if err := s.svc.OnStart(s.Cfg, s.echo); err != nil {
 			return err
 		}
 		return s.runEcho()
@@ -81,7 +81,7 @@ func (s *BaseService) OnStart(c *Config, e *echo.Echo) error { return nil }
 
 func (s *BaseService) Stop() bool {
 	if atomic.CompareAndSwapUint32(&s.running, 1, 0) {
-		s.svc.OnStop(s.cfg, s.echo)
+		s.svc.OnStop(s.Cfg, s.echo)
 		// TODO echo server to stop
 		return true
 	} else {
