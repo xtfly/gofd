@@ -26,7 +26,7 @@ func NewServer(cfg *common.Config) (*Server, error) {
 		cache:       gokits.NewCache(5 * time.Minute),
 		sessionMgnt: p2p.NewSessionMgnt(cfg),
 	}
-	s.BaseService = *common.NewBaseService(cfg, s)
+	s.BaseService = *common.NewBaseService(cfg, cfg.Name, s)
 	return s, nil
 }
 
@@ -36,7 +36,7 @@ func (s *Server) OnStart(c *common.Config, e *echo.Echo) error {
 	e.POST("/api/v1/server/tasks", s.CreateTask)
 	e.DELETE("/api/v1/server/tasks/:id", s.CancelTask)
 	e.GET("/api/v1/server/tasks/:id", s.QueryTask)
-	e.POST("/api/v1/server/tasks/:id/status", s.ReportTask)
+	e.POST("/api/v1/server/tasks/status", s.ReportTask)
 
 	return nil
 }

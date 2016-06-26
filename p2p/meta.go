@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
+
+	log "github.com/cihub/seelog"
 )
 
 type MetaInfoFileSystem interface {
@@ -32,7 +34,7 @@ type FileStoreFileAdapter struct {
 
 func (f *FileStoreFileSystemAdapter) Open(name []string, length int64) (file File, err error) {
 	var ff MetaInfoFile
-	ff, err = os.Open(filepath.Join(name...))
+	ff, err = os.Open(path.Join(name...))
 	if err != nil {
 		return
 	}
@@ -74,28 +76,27 @@ func (f *FileStoreFileAdapter) Close() (err error) {
 	return f.f.Close()
 }
 
-func (m *MetaInfo) addFiles(fileInfo os.FileInfo, file string) (err error) {
-	if len(m.Files) == 0 {
-		m.Files = make([]FileDict, 1)
-	}
-
+func (m *MetaInfo) addFiles(fileInfo os.FileInfo, file string, idx int) (err error) {
 	fileDict := FileDict{Length: fileInfo.Size()}
-	cleanFile := filepath.Clean(file)
-	fileDict.Path, fileDict.Name = filepath.Split(cleanFile)
+	cleanFile := path.Clean(file)
+	//fmt.Println("cleanfile=", cleanFile)
+	fileDict.Path, fileDict.Name = path.Split(cleanFile)
+	//fmt.Println("path=", fileDict.Path, ", name=", fileDict.Name)
 	fileDict.Sum, err = sha1Sum(file)
 	if err != nil {
 		return err
 	}
-	m.Files = append(m.Files, fileDict)
+	m.Files[idx] = &fileDict
 	return
 }
 
 func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
-	mi = &MetaInfo{}
-	for _, f := range roots {
+	mi = &MetaInfo{Files: make([]*FileDict, len(roots))}
+	for idx, f := range roots {
 		var fileInfo os.FileInfo
 		fileInfo, err = os.Stat(f)
 		if err != nil {
+			log.Errorf("File not exist file=%s, error=%v", f, err)
 			return
 		}
 
@@ -103,7 +104,7 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 			return nil, fmt.Errorf("Not support dir")
 		}
 
-		err = mi.addFiles(fileInfo, f)
+		err = mi.addFiles(fileInfo, f, idx)
 		if err != nil {
 			return nil, err
 		}
@@ -114,12 +115,17 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 		pieceLen = choosePieceLength(mi.Length)
 	}
 	mi.PieceLen = pieceLen
+	log.Debugf("File totallength=%v, piecelength=%v", mi.Length, pieceLen)
 
 	fileStoreFS := &FileStoreFileSystemAdapter{}
 	var fileStore FileStore
-	fileStore, err = NewFileStore(mi, fileStoreFS)
+	var fileStoreLength int64
+	fileStore, fileStoreLength, err = NewFileStore(mi, fileStoreFS)
 	if err != nil {
 		return nil, err
+	}
+	if fileStoreLength != mi.Length {
+		return nil, fmt.Errorf("Filestore total length %v, expected %v", fileStoreLength, mi.Length)
 	}
 
 	var sums []byte
@@ -127,7 +133,7 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 	if err != nil {
 		return nil, err
 	}
-	mi.Pieces = string(sums)
+	mi.Pieces = sums
 	return mi, nil
 }
 
@@ -135,12 +141,14 @@ func sha1Sum(file string) (sum string, err error) {
 	var f MetaInfoFile
 	f, err = os.Open(file)
 	if err != nil {
+		log.Errorf("Open file failed, file=%s, error=%v", file, err)
 		return
 	}
 	defer f.Close()
 	hash := sha1.New()
 	_, err = io.Copy(hash, f)
 	if err != nil {
+		log.Errorf("Summary file by sha1 failed, file=%s, error=%v", file, err)
 		return
 	}
 	sum = string(hash.Sum(nil))

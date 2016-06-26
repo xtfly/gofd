@@ -1,14 +1,13 @@
 name: client
 downdir: /Users/xiao/download
-log:
-    level: INFO
+log: /Users/xiao/Go/src/github.com/xtfly/gofd/config/log.xml
 net:
     ip: 127.0.0.1
     mgntPort: 45010
     dataPort: 45011
-    tls:
-        cert: /Users/xiao/server.cert
-        key: /Users/xiao/server.key
+    #tls:
+    #    cert: /Users/xiao/server.crt
+    #    key: /Users/xiao/server.key
 auth:
     username: gofd
     passowrd: AFDAFAFEWFAGAGAGAG

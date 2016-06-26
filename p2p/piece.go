@@ -20,21 +20,33 @@ type chunk struct {
 	data []byte
 }
 
+func countPieces(totalSize, pieceLen int64) (totalPieces, lastPieceLength int) {
+	totalPieces = int(totalSize / pieceLen)
+	lastPieceLength = int(totalSize % pieceLen)
+	if lastPieceLength == 0 { // last piece is a full piece
+		lastPieceLength = int(pieceLen)
+	} else {
+		totalPieces++
+	}
+	return
+}
+
 // 根据元数据信息，在文件中检查已下载的位图信息，有多少好的Piece，有多少块的Piece
 func checkPieces(fs FileStore, totalLength int64, m *MetaInfo) (good, bad int, goodBits *Bitset, err error) {
-	pieceLength := m.PieceLen
-	numPieces := int((totalLength + pieceLength - 1) / pieceLength)
-	goodBits = NewBitset(int(numPieces))
+	pieceLen := m.PieceLen
+	totalPieces, _ := countPieces(totalLength, pieceLen)
+	goodBits = NewBitset(int(totalPieces))
 	ref := m.Pieces
-	if len(ref) != numPieces*sha1.Size {
-		err = errors.New("Incorrect Info.Pieces length")
+	refLen := len(ref)
+	if refLen != totalPieces*sha1.Size {
+		err = errors.New(fmt.Sprint("Incorrect MetaInfo.Pieces length ", totalPieces*sha1.Size, "actual length ", refLen))
 		return
 	}
-	currentSums, err := computeSums(fs, totalLength, m.PieceLen)
+	currentSums, err := computeSums(fs, totalLength, pieceLen)
 	if err != nil {
 		return
 	}
-	for i := 0; i < numPieces; i++ {
+	for i := 0; i < totalPieces; i++ {
 		base := i * sha1.Size
 		end := base + sha1.Size
 		if checkEqual([]byte(ref[base:end]), currentSums[base:end]) {

@@ -57,16 +57,17 @@ func main() {
 		}
 	}
 
-	go func() {
-		quitChan := listenSigInt()
-		select {
-		case <-quitChan:
-			fmt.Printf("got control-C")
-			svc.Stop()
-		}
-	}()
+	if err = svc.Start(); err != nil {
+		fmt.Printf("Start service failed, %s.\n", err.Error())
+		os.Exit(4)
+	}
 
-	svc.Start()
+	quitChan := listenSigInt()
+	select {
+	case <-quitChan:
+		fmt.Printf("got control-C")
+		svc.Stop()
+	}
 }
 
 func listenSigInt() chan os.Signal {

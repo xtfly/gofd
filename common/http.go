@@ -7,36 +7,55 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
+	"time"
 )
 
 func (s *BaseService) HttpGet(addr, urlpath string) (rspBody []byte, err error) {
-	return sendHttpReq(s.Cfg, "GET", addr, urlpath, nil)
+	return SendHttpReq(s.Cfg, "GET", addr, urlpath, nil)
 }
 
 func (s *BaseService) HttpPost(addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
-	return sendHttpReq(s.Cfg, "POST", addr, urlpath, reqBody)
+	return SendHttpReq(s.Cfg, "POST", addr, urlpath, reqBody)
 }
 
 func (s *BaseService) HttpDelete(addr, urlpath string) (err error) {
-	_, err = sendHttpReq(s.Cfg, "DELETE", addr, urlpath, nil)
+	_, err = SendHttpReq(s.Cfg, "DELETE", addr, urlpath, nil)
 	return
 }
 
-func sendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+func SendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
+	var client *http.Client
+	schema := "http"
+	if cfg.Net.Tls != nil {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client = &http.Client{Transport: tr}
+		schema = "https"
+	} else {
+		client = &http.Client{}
 	}
-	client := &http.Client{Transport: tr}
 
-	url := fmt.Sprintf("https://%s:%v/%s", addr, cfg.Net.ClientMgntPort, urlpath)
+	if cfg.Server && !strings.Contains(addr, ":") {
+		addr = fmt.Sprintf("%s:%v", addr, cfg.Net.ClientMgntPort)
+	}
+
+	url := fmt.Sprintf("%s://%s%s", schema, addr, urlpath)
 	req, err := http.NewRequest(method, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}
 
 	req.SetBasicAuth(cfg.Auth.Username, cfg.Auth.Passowrd)
+	req.Header.Set("Content-Type", "application/json")
+	//log.Debugf("Sending http request %v", req)
 
+	client.Timeout = 2 * time.Second
 	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode > 300 {

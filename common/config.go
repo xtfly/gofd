@@ -19,12 +19,7 @@ type Config struct {
 
 	DownDir string `yaml:"downdir,omitempty"` //只有客户端才配置
 
-	Log struct {
-		Level     string `yaml:"level"`
-		File      string `yaml:"file,omitempty"`
-		FileSize  int    `yaml:"fileSzie,omitempty"`
-		FileCount int    `yaml:"fileCount,omitempty"`
-	} `yaml:"log"`
+	Log string `yaml:"log"`
 
 	Net struct {
 		IP       string `yaml:"ip"`
@@ -54,39 +49,31 @@ type Control struct {
 	CacheSize int `yaml:"cacheSize"` // Unit: MiB
 }
 
-func normalFile(cfgfile string) string {
-	if !strings.HasPrefix(cfgfile, "/") {
-		return filepath.Join(gokits.GetProcPwd(), cfgfile)
+func normalFile(dir string) string {
+	if !strings.HasPrefix(dir, "/") {
+		return filepath.Join(gokits.GetPwd(), dir)
 	}
-	return cfgfile
+	return dir
 }
 
 func (c *Config) defaultValue() {
-	if !strings.HasPrefix(c.DownDir, "/") {
-		c.DownDir = filepath.Join(gokits.GetProcPwd(), c.DownDir)
-	}
+	c.DownDir = normalFile(c.DownDir)
 	f, err := os.Stat(c.DownDir)
-	if err == nil || os.IsExist(err) {
-		os.Mkdir(c.DownDir, os.ModePerm)
-	}
-	if !f.IsDir() {
-		fmt.Printf("DownDir is not a directory")
-		os.Exit(6)
-	}
-
-	if c.Log.FileCount == 0 {
-		c.Log.FileCount = 10
-	}
-	if c.Log.FileSize == 0 {
-		c.Log.FileSize = 10
+	if err == nil || !os.IsExist(err) {
+		os.MkdirAll(c.DownDir, os.ModePerm)
+	} else {
+		if !f.IsDir() {
+			fmt.Printf("DownDir is not a directory")
+			os.Exit(6)
+		}
 	}
 
-	if c.Log.File != "" && !strings.HasPrefix(c.Log.File, "/") {
-		c.Log.File = filepath.Join(gokits.GetProcPwd(), c.Log.File)
+	if c.Log != "" && !strings.HasPrefix(c.Log, "/") {
+		c.Log = filepath.Join(gokits.GetProcPwd(), c.Log)
 	}
 
 	if c.Control == nil {
-		c.Control = &Control{Speed: 10, MaxActive: 5, CacheSize: 50}
+		c.Control = &Control{Speed: 10, MaxActive: 5, CacheSize: 25}
 	}
 
 	if c.Control.Speed == 0 {
@@ -96,7 +83,7 @@ func (c *Config) defaultValue() {
 		c.Control.MaxActive = 5
 	}
 	if c.Control.CacheSize == 0 {
-		c.Control.CacheSize = 50
+		c.Control.CacheSize = 25
 	}
 }
 

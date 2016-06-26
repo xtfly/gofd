@@ -1,13 +1,13 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/cihub/seelog"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/engine/standard"
-	"github.com/xtfly/loghook/rfile"
 )
 
 type Service interface {
@@ -19,14 +19,16 @@ type Service interface {
 }
 
 type BaseService struct {
+	name    string
 	running uint32 // atomic
 	Cfg     *Config
 	echo    *echo.Echo
 	svc     Service
 }
 
-func NewBaseService(cfg *Config, svc Service) *BaseService {
+func NewBaseService(cfg *Config, name string, svc Service) *BaseService {
 	return &BaseService{
+		name:    name,
 		running: 0,
 		Cfg:     cfg,
 		echo:    echo.New(),
@@ -36,13 +38,10 @@ func NewBaseService(cfg *Config, svc Service) *BaseService {
 
 // init log by config
 func (s *BaseService) initlog() {
-	cfglog := s.Cfg.Log
-	if cfglog.File != "" {
-		log.AddHook(rfile.NewHook(cfglog.File, cfglog.FileSize, cfglog.FileCount))
-	}
-
-	if lvl, err := log.ParseLevel(cfglog.Level); err != nil {
-		log.SetLevel(lvl)
+	if s.Cfg.Log != "" {
+		if logger, err := log.LoggerFromConfigAsFile(s.Cfg.Log); err == nil {
+			log.ReplaceLogger(logger)
+		}
 	}
 
 	// init echo log
@@ -62,18 +61,26 @@ func (s *BaseService) runEcho() error {
 	}
 	sr.SetHandler(s.echo)
 	sr.SetLogger(s.echo.Logger())
-	return sr.Start()
+
+	log.Infof("Starting http server %s:%v", net.IP, net.MgntPort)
+	if err := sr.Start(); err != nil {
+		log.Infof("Start http server %s:%v failed %v", net.IP, net.MgntPort, err)
+		return err
+	}
+	return nil
 }
 
 func (s *BaseService) Start() error {
 	if atomic.CompareAndSwapUint32(&s.running, 0, 1) {
 		s.initlog()
+		log.Infof("Starting %s", s.name)
 		if err := s.svc.OnStart(s.Cfg, s.echo); err != nil {
 			return err
 		}
-		return s.runEcho()
-	} else {
+		go s.runEcho()
 		return nil
+	} else {
+		return errors.New("Started aleadry.")
 	}
 }
 
@@ -81,8 +88,8 @@ func (s *BaseService) OnStart(c *Config, e *echo.Echo) error { return nil }
 
 func (s *BaseService) Stop() bool {
 	if atomic.CompareAndSwapUint32(&s.running, 1, 0) {
+		log.Infof("Stopping %s", s.name)
 		s.svc.OnStop(s.Cfg, s.echo)
-		// TODO echo server to stop
 		return true
 	} else {
 		return false

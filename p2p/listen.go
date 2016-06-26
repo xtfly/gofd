@@ -5,8 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"time"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/cihub/seelog"
 	"github.com/xtfly/gofd/common"
 )
 
@@ -14,7 +15,7 @@ import (
 // identify which active p2pSession it's relevant for.
 type P2pConn struct {
 	conn       net.Conn
-	upstream   bool //是否是上游节点，即连接到其它的节点，而不是其它节点连入本节点
+	client     bool //  对端是否为客户端
 	remoteAddr net.Addr
 	taskId     string
 }
@@ -22,34 +23,49 @@ type P2pConn struct {
 // listenForPeerConnections listens on a TCP port for incoming connections and
 // demuxes them to the appropriate active p2pSession based on the InfoHash
 // in the header.
-func StartListen(cfg *common.Config) (conChan chan *P2pConn, listenPort int, err error) {
-	listener, err := CreateListener(cfg)
+func StartListen(cfg *common.Config) (conChan chan *P2pConn, listener net.Listener, err error) {
+	listener, err = CreateListener(cfg)
 	if err != nil {
 		return
 	}
+
 	conChan = make(chan *P2pConn)
 	go func(cfg *common.Config, conChan chan *P2pConn) {
+		var tempDelay time.Duration
 		for {
-			var conn net.Conn
-			conn, err := listener.Accept()
-			if err != nil {
-				log.Println("Listener accept failed:", err)
-				continue
+			conn, e := listener.Accept()
+			if e != nil {
+				if ne, ok := e.(net.Error); ok && ne.Temporary() {
+					if tempDelay == 0 {
+						tempDelay = 5 * time.Millisecond
+					} else {
+						tempDelay *= 2
+					}
+					if max := 1 * time.Second; tempDelay > max {
+						tempDelay = max
+					}
+					log.Infof("http: Accept error: %v; retrying in %v", e, tempDelay)
+					time.Sleep(tempDelay)
+					continue
+				}
+				return
 			}
+			tempDelay = 0
+
 			h, err := readHeader(conn)
 			if err != nil {
-				log.Println("Error reading header: ", err)
+				log.Error("Error reading header: ", err)
 				continue
 			}
 
 			if err := h.validate(cfg); err != nil {
-				log.Println("header auth failed:", err)
+				log.Error("header auth failed:", err)
 				continue
 			}
 
 			conChan <- &P2pConn{
 				conn:       conn,
-				upstream:   false,
+				client:     true,
 				remoteAddr: conn.RemoteAddr(),
 				taskId:     h.TaskId,
 			}
@@ -65,11 +81,13 @@ func CreateListener(cfg *common.Config) (listener net.Listener, err error) {
 			IP:   net.ParseIP(cfg.Net.IP),
 			Port: cfg.Net.DataPort,
 		})
+
 	if err != nil {
-		log.Fatal("Listen failed:", err)
+		log.Error("Listen failed:", err)
+		return
 	}
 
-	log.Println("Listening for peers on port:", cfg.Net.DataPort)
+	log.Info("Listening for peers on port:", cfg.Net.DataPort)
 	return
 }
 
@@ -77,32 +95,26 @@ func CreateListener(cfg *common.Config) (listener net.Listener, err error) {
 func readHeader(conn net.Conn) (h *Header, err error) {
 	h = &Header{}
 
-	lenbs := make([]byte, 4)
-	_, err = conn.Read(lenbs)
-	if err != nil {
-		err = fmt.Errorf("Couldn't read 4st byte: %v", err)
-		return
-	}
-	lenbuf := bytes.NewBuffer(lenbs)
-	var len int32
-	err = binary.Read(lenbuf, binary.BigEndian, &len)
+	var bslen int32
+	err = binary.Read(conn, binary.BigEndian, &bslen)
 	if err != nil {
 		err = fmt.Errorf("Read length error: %v", err)
 		return
 	}
-	if len <= 0 || len > 200 {
-		err = fmt.Errorf("read length is invalid: %v", len)
+
+	if bslen <= 0 || bslen > 200 {
+		err = fmt.Errorf("read length is invalid: %v", bslen)
 		return
 	}
 
-	bs := make([]byte, len)
+	bs := make([]byte, bslen)
 	_, err = conn.Read(bs)
 	if err != nil {
 		err = fmt.Errorf("Couldn't read auth info: %v", err)
 		return
 	}
 
-	h.Len = len
+	h.Len = bslen
 	buf := bytes.NewBuffer(bs)
 
 	// taskId
@@ -110,24 +122,28 @@ func readHeader(conn net.Conn) (h *Header, err error) {
 		err = fmt.Errorf("Read taskId error: %v", err)
 		return
 	}
+	h.TaskId = h.TaskId[:len(h.TaskId)-1]
 
 	// username
 	if h.Username, err = buf.ReadString(byte(0x00)); err != nil {
 		err = fmt.Errorf("Read username error: %v", err)
 		return
 	}
+	h.Username = h.Username[:len(h.Username)-1]
 
 	// password
 	if h.Passowrd, err = buf.ReadString(byte(0x00)); err != nil {
 		err = fmt.Errorf("Read password error: %v", err)
 		return
 	}
+	h.Passowrd = h.Passowrd[:len(h.Passowrd)-1]
 
 	// seed
 	if h.Seed, err = buf.ReadString(byte(0x00)); err != nil {
 		err = fmt.Errorf("Read password error: %v", err)
 		return
 	}
+	h.Seed = h.Seed[:len(h.Seed)-1]
 
 	return
 }
@@ -145,7 +161,7 @@ func writeHeader(conn net.Conn, taskId string, cfg *common.Config) (err error) {
 		blen += len(v) + 1
 	}
 
-	binary.Write(buf, binary.BigEndian, blen)
+	binary.Write(buf, binary.BigEndian, int32(blen))
 	for _, v := range all {
 		buf.Write(v)
 		buf.WriteByte(0)

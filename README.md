@@ -1,7 +1,7 @@
 GoFD
 ==========
 
-### 简介
+## 简介
 
 GoFD是一个使用Go语言开发，集中控制的文件分发系统，用于在一个大规模业务系统文件分发。
 系统采用C/S结构，S端负责接收分发任务，把任务下发给C端，C端之间采用P2P技术节点之间共享加速下载。
@@ -14,3 +14,7 @@ S端与BT的Tracker机制也不一样，它不会维护节点的已下载的文�
 
 GoFD目前正在开发，功能沿未完成。
 
+
+## 测试
+
+curl -v -l -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks

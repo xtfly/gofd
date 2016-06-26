@@ -20,7 +20,7 @@ func NewClient(cfg *common.Config) (*Client, error) {
 	c := &Client{
 		sessionMgnt: p2p.NewSessionMgnt(cfg),
 	}
-	c.BaseService = *common.NewBaseService(cfg, c)
+	c.BaseService = *common.NewBaseService(cfg, cfg.Name, c)
 	return c, nil
 }
 
@@ -28,6 +28,7 @@ func (c *Client) OnStart(cfg *common.Config, e *echo.Echo) error {
 	go func() { c.sessionMgnt.Start() }()
 
 	e.POST("/api/v1/client/tasks", c.CreateTask)
+	e.POST("/api/v1/client/tasks/start", c.StartTask)
 	e.DELETE("/api/v1/client/tasks/:id", c.CancelTask)
 
 	return nil

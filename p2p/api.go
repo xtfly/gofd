@@ -20,7 +20,7 @@ type TaskInfo struct {
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
 
-	DispatchInfos map[string]DispatchInfo `json:"dispatchInfos,omitempty"`
+	DispatchInfos map[string]*DispatchInfo `json:"dispatchInfos,omitempty"`
 }
 
 // 单个IP的分发信息
@@ -30,13 +30,38 @@ type DispatchInfo struct {
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
 
-	DispatchFiles []DispatchFile `json:"dispatchFiles"`
+	DispatchFiles []*DispatchFile `json:"dispatchFiles"`
 }
 
 // 单个文件分发状态
 type DispatchFile struct {
 	FileName string `json:"filename"`
 	Status   string `json:"status"`
+}
+
+func (ti *TaskInfo) IsFinished() bool {
+	completed := 0
+	failed := 0
+	for _, v := range ti.DispatchInfos {
+		if v.Status == TaskStatus_Completed.String() {
+			completed++
+		}
+		if v.Status == TaskStatus_Failed.String() {
+			failed++
+		}
+	}
+
+	if completed == len(ti.DispatchInfos) {
+		ti.Status = TaskStatus_Completed.String()
+		return true
+	}
+
+	if completed+failed == len(ti.DispatchInfos) {
+		ti.Status = TaskStatus_Failed.String()
+		return true
+	}
+
+	return false
 }
 
 // 任务状态
@@ -92,19 +117,24 @@ type FileDict struct {
 
 // 一个任务内所有文件的元数据信息
 type MetaInfo struct {
-	Length   int64      `json:"length"`
-	Sum      string     `json:"sum"`
-	PieceLen int64      `json:"PieceLen"`
-	Pieces   string     `json:"pieces"`
-	Files    []FileDict `json:"files"` // Multiple File
+	Length   int64       `json:"length"`
+	PieceLen int64       `json:"PieceLen"`
+	Pieces   []byte      `json:"pieces"`
+	Files    []*FileDict `json:"files"` // Multiple File
 }
 
 // 下发给客户端的分发任务
 type DispatchTask struct {
 	TaskId    string     `json:"taskId"`
-	LinkChain *LinkChain `json:"linkChain"`
 	MetaInfo  *MetaInfo  `json:"metaInfo"`
+	LinkChain *LinkChain `json:"linkChain"`
 	Speed     int64      `json:"speed"`
+}
+
+// 下发给客户端的分发任务
+type StartTask struct {
+	TaskId    string     `json:"taskId"`
+	LinkChain *LinkChain `json:"linkChain"`
 }
 
 // 分发路径
@@ -126,7 +156,7 @@ type Header struct {
 
 // TODO
 type ClientStatusReport struct {
-	Event  string
-	TaskId string
-	IP     string
+	TaskId          string  `json:"taskId"`
+	IP              string  `json:"ip"`
+	PercentComplete float32 `json:"percentComplete"`
 }

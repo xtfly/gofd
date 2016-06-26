@@ -1,6 +1,6 @@
 package p2p
 
-import log "github.com/Sirupsen/logrus"
+import log "github.com/cihub/seelog"
 
 // As defined by the bittorrent protocol, this bitset is big-endian, such that
 // the high bit of the first byte is block 0
@@ -59,13 +59,14 @@ func (b *Bitset) InRange(index int) bool {
 
 func (b *Bitset) checkRange(index int) {
 	if !b.InRange(index) {
-		log.Panicf("Index %d out of range 0..%d.", index, b.n)
+		log.Errorf("Index %d out of range 0..%d.", index, b.n)
 	}
 }
 
 func (b *Bitset) AndNot(b2 *Bitset) {
 	if b.n != b2.n {
-		log.Panicf("Unequal bitset sizes %d != %d", b.n, b2.n)
+		log.Errorf("Unequal bitset sizes %d != %d", b.n, b2.n)
+		return
 	}
 	for i := 0; i < len(b.b); i++ {
 		b.b[i] = b.b[i] & ^b2.b[i]

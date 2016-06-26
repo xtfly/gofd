@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/cihub/seelog"
 )
 
 // Interface for a file.
@@ -48,7 +48,7 @@ type fileEntry struct {
 }
 
 // 根据元数据信息打开所有文件
-func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, err error) {
+func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, totalSize int64, err error) {
 	fs := &fileStore{}
 	fs.fileSystem = fileSystem
 
@@ -57,10 +57,11 @@ func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, err error
 	fs.offsets = make([]int64, numFiles)
 
 	for i, _ := range info.Files {
-		src := &info.Files[i]
+		src := info.Files[i]
 		var file File
 		file, err = fs.fileSystem.Open([]string{src.Path, src.Name}, src.Length)
 		if err != nil {
+			log.Errorf("Open file failed, file=%v/%v, error=%v", src.Path, src.Name, err)
 			// Close all files opened up to now.
 			for i2 := 0; i2 < i; i2++ {
 				fs.files[i2].file.Close()
@@ -69,7 +70,8 @@ func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, err error
 		}
 		fs.files[i].file = file
 		fs.files[i].length = src.Length
-		fs.offsets[i] += src.Length
+		fs.offsets[i] = totalSize
+		totalSize += src.Length
 	}
 	f = fs
 	return
@@ -107,7 +109,7 @@ func (f *fileStore) ReadAt(p []byte, off int64) (int, error) {
 	for _, unf := range unfullfilled {
 		_, err := f.RawReadAt(unf.data, unf.i)
 		if err != nil {
-			log.Println("Got an error on read (off=", unf.i, "len=", len(unf.data), ") from filestore:", err)
+			log.Error("Got an error on read (off=", unf.i, "len=", len(unf.data), ") from filestore:", err)
 			retErr = err
 		}
 	}
@@ -162,7 +164,8 @@ func (f *fileStore) Commit(pieceNum int, piece []byte, off int64) {
 	if f.cache != nil {
 		_, err := f.RawWriteAt(piece, off)
 		if err != nil {
-			log.Panicln("Error committing to storage:", err)
+			log.Error("Error committing to storage:", err)
+			return
 		}
 		f.cache.MarkCommitted(pieceNum)
 	}

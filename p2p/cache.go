@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/cihub/seelog"
 )
 
 type CacheProvider interface {
@@ -77,7 +77,7 @@ func (r *RamCacheProvider) rebalance(shouldTrim bool) {
 	//Cache size is a diminishing return thing:
 	//The more of it a torrent has, the less of a difference additional cache makes.
 	//Thus, instead of scaling the distribution lineraly with torrent size, we'll do it by square-root
-	log.Println("Rebalancing caches...")
+	log.Debug("Rebalancing caches...")
 	var scalingTotal float64
 	sqrts := make(map[string]float64)
 	for i, cache := range r.caches {
@@ -91,7 +91,7 @@ func (r *RamCacheProvider) rebalance(shouldTrim bool) {
 		if newCap == 0 {
 			newCap = 1 //Something's better than nothing!
 		}
-		log.Printf("Setting cache '%x' to new capacity %v (%v MiB)", cache.infohash, newCap, float32(newCap*cache.pieceSize)/float32(1024*1024))
+		log.Debugf("Setting cache '%s' to new capacity %v (%v MiB)", cache.infohash, newCap, float32(newCap*cache.pieceSize)/float32(1024*1024))
 		cache.setCapacity(newCap)
 	}
 
@@ -316,7 +316,7 @@ func (r *RamCache) trim() []chunk {
 //Simple utility for dumping a []byte to log.
 //It skips over sections of '0', unlike encoding/hex.Dump()
 func Dump(buff []byte) {
-	log.Println("Dumping []byte len=", len(buff))
+	log.Debug("Dumping []byte len=", len(buff))
 	for i := 0; i < len(buff); i += 16 {
 		skipLine := true
 		for j := i; j < len(buff) && j < 16+i; j++ {
@@ -326,8 +326,8 @@ func Dump(buff []byte) {
 			}
 		}
 		if !skipLine {
-			log.Printf("%X: %X\n", i, buff[i:i+16])
+			log.Debugf("%X: %X\n", i, buff[i:i+16])
 		}
 	}
-	log.Println("Done Dumping")
+	log.Debug("Done Dumping")
 }
