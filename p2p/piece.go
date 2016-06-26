@@ -143,7 +143,7 @@ func checkPiece(fs FileStore, totalLength int64, m *MetaInfo, pieceIndex int) (g
 	return
 }
 
-// --------
+// 正在下载的Piece
 type ActivePiece struct {
 	downloaderCount []int // -1 means piece is already downloaded
 	pieceLength     int

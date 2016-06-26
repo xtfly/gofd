@@ -18,20 +18,6 @@ const (
 	MAX_RETRY_CONNECT_TIMES = 10
 )
 
-const (
-	// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，并把该消息发送给所有与客户端建立连接的peer
-	HAVE = iota
-
-	// 交换位图
-	BITFIELD
-
-	// 向该peer发送数据请求
-	REQUEST
-
-	// 当客户端收到某个peer的request消息后,客户端已经下载，则发送piece消息将文件数据上传给该peer。
-	PIECE
-)
-
 type P2pSession struct {
 	// 全局信息
 	g *global
@@ -50,14 +36,6 @@ type P2pSession struct {
 
 	// 正在下载的Piece
 	activePieces map[int]*ActivePiece
-
-	//
-	Uploaded   int64 // 已发送的大小
-	Downloaded int64 // 已下载的大小
-	Left       int64 // 剩余的Piece个数
-
-	//
-	trackerReportChan chan ClientStatusReport
 
 	// Peer信息
 	addPeerChan     chan *P2pConn
@@ -113,7 +91,6 @@ func (s *P2pSession) init() error {
 	}
 
 	s.totalPieces, s.lastPieceLength = countPieces(s.totalSize, m.PieceLen)
-
 	return nil
 }
 
@@ -128,12 +105,9 @@ func (s *P2pSession) initInServer() error {
 	for index := 0; index < s.goodPieces; index++ {
 		s.pieceSet.Set(index)
 	}
-	s.Left = 0
-	s.Downloaded = s.totalSize
 
 	log.Infof("[%s] Inited p2p server session...", s.taskId)
 	s.initedAt = time.Now()
-
 	return nil
 }
 
@@ -163,14 +137,13 @@ func (s *P2pSession) initInClient() error {
 	}
 
 	// 计算剩余块信息
-	{
-		bad := s.totalPieces - s.goodPieces
-		left := int64(bad) * int64(s.task.MetaInfo.PieceLen)
-		if !s.pieceSet.IsSet(s.totalPieces - 1) {
-			left = left - int64(s.task.MetaInfo.PieceLen) + int64(s.lastPieceLength)
-		}
-		s.Left = left
-	}
+	// {
+	// 	bad := s.totalPieces - s.goodPieces
+	// 	left := int64(bad) * int64(s.task.MetaInfo.PieceLen)
+	// 	if !s.pieceSet.IsSet(s.totalPieces - 1) {
+	// 		left = left - int64(s.task.MetaInfo.PieceLen) + int64(s.lastPieceLength)
+	// 	}
+	// }
 
 	log.Infof("[%s] Inited p2p client session...", s.taskId)
 	s.initedAt = time.Now()
@@ -299,22 +272,22 @@ func (s *P2pSession) AddPeer(conn *P2pConn) {
 }
 
 // 接入其它的Peer连接
-func (s *P2pSession) AcceptNewPeer(conn *P2pConn) {
+func (s *P2pSession) AcceptNewPeer(c *P2pConn) {
 	// 先回一个连接响应
-	_, err := conn.conn.Write([]byte{byte(0xFF)})
+	_, err := c.conn.Write([]byte{byte(0xFF)})
 	if err != nil {
-		log.Errorf("[%s] Write connection init response to peer[%s] failed", s.taskId, conn.remoteAddr.String())
+		log.Errorf("[%s] Write connection init response to peer[%s] failed", s.taskId, c.remoteAddr.String())
 		return
 	}
-	s.AddPeer(conn)
+	s.AddPeer(c)
 }
 
 // 处理连接到其它成功的Peer，或者是其它Peer的接入
-func (s *P2pSession) addPeerImp(conn *P2pConn) {
-	peerAddr := conn.remoteAddr.String()
-	log.Infof("[%s] Add new peer, peer[%s]", conn.taskId, peerAddr)
+func (s *P2pSession) addPeerImp(c *P2pConn) {
+	peerAddr := c.remoteAddr.String()
+	log.Infof("[%s] Add new peer, peer[%s]", c.taskId, peerAddr)
 	// 创建一个Peer对象
-	ps := NewPeer(conn, s.task.Speed)
+	ps := NewPeer(c, s.task.Speed)
 
 	// 位图
 	ps.have = NewBitset(s.totalPieces)
@@ -426,7 +399,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		if int64(begin)+int64(length) > s.task.MetaInfo.PieceLen {
 			return errors.New("begin + length out of range")
 		}
-		return s.sendRequest(p, index, begin, length)
+		return s.sendPiece(p, index, begin, length)
 	case PIECE: // 处理Peer发送过来的PIECE消息
 		log.Debugf("[%s] Recv PIECE from peer[%s] ", p.taskId, p.address)
 		if len(message) < 9 {
@@ -468,7 +441,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 }
 
 // 给Peer发送块消息
-func (s *P2pSession) sendRequest(peer *peer, index, begin, length uint32) (err error) {
+func (s *P2pSession) sendPiece(p *peer, index, begin, length uint32) (err error) {
 	log.Debug("[", s.taskId, "] Sending block", index, begin, length)
 	buf := make([]byte, length+9)
 	buf[0] = PIECE
@@ -479,8 +452,8 @@ func (s *P2pSession) sendRequest(peer *peer, index, begin, length uint32) (err e
 	if err != nil {
 		return
 	}
-	peer.sendMessage(buf)
-	s.Uploaded += int64(length)
+	p.sendMessage(buf)
+
 	return
 }
 
@@ -498,7 +471,6 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	}
 
 	v.recordBlock(int(block))
-	s.Downloaded += int64(length)
 	if !v.isComplete() {
 		return
 	}
@@ -515,7 +487,6 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 
 	// 提交文件存储
 	s.fileStore.Commit(int(piece), pieceBytes, s.task.MetaInfo.PieceLen*int64(piece))
-	s.Left -= int64(v.pieceLength)
 	s.pieceSet.Set(int(piece))
 	s.goodPieces++
 
@@ -536,10 +507,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	for _, p := range s.peers {
 		if p.have != nil && p.client &&
 			(int(piece) >= p.have.n || !p.have.IsSet(int(piece))) {
-			haveMsg := make([]byte, 5)
-			haveMsg[0] = HAVE
-			uint32ToBytes(haveMsg[1:5], piece)
-			p.sendMessage(haveMsg)
+			p.SendHave(piece)
 		}
 	}
 
@@ -631,16 +599,7 @@ func (ts *P2pSession) requestBlockImp(p *peer, piece int, block int) {
 	}
 
 	log.Debugf("[%s] Requesting block from peer[%s], %v.%v, length=%v", ts.taskId, p.address, piece, block, length)
-
-	req := make([]byte, 13)
-	req[0] = byte(REQUEST)
-	uint32ToBytes(req[1:5], uint32(piece))
-	uint32ToBytes(req[5:9], uint32(begin))
-	uint32ToBytes(req[9:13], uint32(length))
-	requestIndex := (uint64(piece) << 32) | uint64(begin)
-
-	p.ourRequests[requestIndex] = time.Now()
-	p.sendMessage(req)
+	p.SendRequest(piece, begin, length)
 	return
 }
 
@@ -734,7 +693,7 @@ func (ts *P2pSession) Init() {
 		case <-ts.retryConnTimeChan:
 			ts.tryNewPeer()
 		case <-ts.quitChan:
-			log.Info("[", ts.taskId, "] quit p2p session")
+			log.Info("[", ts.taskId, "] Quit p2p session")
 			ts.shutdown()
 			return
 		}
@@ -747,7 +706,7 @@ func (ts *P2pSession) doCheckRequests(p *peer) (err error) {
 		if now.Sub(v).Seconds() > 30 {
 			piece := int(k >> 32)
 			block := int(k&0xffffffff) / STANDARD_BLOCK_LENGTH
-			log.Error("[", ts.taskId, "] timing out request of ", piece, ".", block)
+			log.Error("[", ts.taskId, "] Timing out request of ", piece, ".", block)
 			ts.removeRequest(piece, block)
 		}
 	}

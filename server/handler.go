@@ -40,6 +40,7 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 func (s *Server) updateTask(ti *p2p.TaskInfo, ts p2p.TaskStatus) {
 	log.Errorf("[%s] Task status changed, status=%v", ti.Id, ts)
 	ti.Status = ts.String()
+	ti.FinishedAt = time.Now()
 	// 设置缓存超时间
 	s.cache.UpdateExpiration(ti.Id, time.Now().Add(5*time.Minute).UnixNano())
 	s.sessionMgnt.StopTask(ti.Id)
@@ -134,11 +135,13 @@ func (s *Server) waitClientRsp(ti *p2p.TaskInfo, allCount int, rspChan chan *Tas
 		select {
 		case tdr := <-rspChan:
 			if di, ok := ti.DispatchInfos[tdr.IP]; ok {
+				di.StartedAt = time.Now()
 				if tdr.Success {
 					di.Status = p2p.TaskStatus_InProgress.String()
 					succCount++
 				} else {
 					di.Status = p2p.TaskStatus_Failed.String()
+					di.FinishedAt = time.Now()
 					failCount++
 				}
 

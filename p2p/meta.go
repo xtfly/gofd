@@ -79,9 +79,7 @@ func (f *FileStoreFileAdapter) Close() (err error) {
 func (m *MetaInfo) addFiles(fileInfo os.FileInfo, file string, idx int) (err error) {
 	fileDict := FileDict{Length: fileInfo.Size()}
 	cleanFile := path.Clean(file)
-	//fmt.Println("cleanfile=", cleanFile)
 	fileDict.Path, fileDict.Name = path.Split(cleanFile)
-	//fmt.Println("path=", fileDict.Path, ", name=", fileDict.Name)
 	fileDict.Sum, err = sha1Sum(file)
 	if err != nil {
 		return err

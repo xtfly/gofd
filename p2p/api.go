@@ -68,19 +68,12 @@ func (ti *TaskInfo) IsFinished() bool {
 type TaskStatus int
 
 const (
-	// task is not existed
 	TaskStatus_TaskNotExist TaskStatus = iota
-	// task has existed
 	TaskStatus_TaskExist
-	// task is initing
 	TaskStatus_Init
-	// task is failed
 	TaskStatus_Failed
-	// task is completed
 	TaskStatus_Completed
-	// files in the task are dispatching
 	TaskStatus_InProgress
-	// few files in the taks are not existed
 	TaskStatus_FileNotExist
 )
 

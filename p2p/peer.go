@@ -12,26 +12,36 @@ import (
 const (
 	// 最多从其它Peer发送请求
 	MAX_OUR_REQUESTS = 5
-
-	// 最多允许其它Peer向本Peer请求
-	MAX_PEER_REQUESTS = 10
 )
 
-// 下载端
+const (
+	// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，并把该消息发送给所有建立连接的peer
+	HAVE = iota
+
+	// 交换位图
+	BITFIELD
+
+	// 向该peer发送数据请求
+	REQUEST
+
+	// 当客户端收到某个peer的request消息后,则发送piece消息将文件数据传给该peer。
+	PIECE
+)
+
+// 下载连接端
 type peer struct {
 	taskId  string   // 任务标识
 	address string   // 对端地址
 	conn    net.Conn // 物理连接
 	client  bool     // 对端是否为客户端
 
-	writeChan      chan []byte
-	flowctrlWriter *flowctrl.Writer
+	writeChan      chan []byte      // 连接的写Chan
+	flowctrlWriter *flowctrl.Writer // 基于流控的写
 
-	lastReadTime time.Time
-	have         *Bitset // 对端已有的Piece
+	lastReadTime time.Time //
+	have         *Bitset   // 已有的Piece
 
-	peerRequests map[uint64]bool
-	ourRequests  map[uint64]time.Time // What we requested, when we requested it
+	ourRequests map[uint64]time.Time // What we requested, when we requested it
 }
 
 type peerMessage struct {
@@ -48,7 +58,6 @@ func NewPeer(c *P2pConn, speed int64) *peer {
 		client:         c.client,
 		writeChan:      writeChan,
 		flowctrlWriter: flowctrl.NewWriter(c.conn, speed),
-		peerRequests:   make(map[uint64]bool, MAX_PEER_REQUESTS),
 		ourRequests:    make(map[uint64]time.Time, MAX_OUR_REQUESTS),
 	}
 }
@@ -142,4 +151,23 @@ func (p *peer) SendBitfield(bs *Bitset) {
 	copy(msg[1:], bs.Bytes())
 	log.Debugf("[%s] send BITFIELD to peer[%s]", p.taskId, p.address)
 	p.sendMessage(msg)
+}
+
+func (p *peer) SendHave(piece uint32) {
+	haveMsg := make([]byte, 5)
+	haveMsg[0] = HAVE
+	uint32ToBytes(haveMsg[1:5], piece)
+	p.sendMessage(haveMsg)
+}
+
+func (p *peer) SendRequest(piece, begin, length int) {
+	req := make([]byte, 13)
+	req[0] = byte(REQUEST)
+	uint32ToBytes(req[1:5], uint32(piece))
+	uint32ToBytes(req[5:9], uint32(begin))
+	uint32ToBytes(req[9:13], uint32(length))
+	requestIndex := (uint64(piece) << 32) | uint64(begin)
+
+	p.ourRequests[requestIndex] = time.Now()
+	p.sendMessage(req)
 }

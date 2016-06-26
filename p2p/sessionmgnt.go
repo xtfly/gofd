@@ -15,14 +15,14 @@ type global struct {
 }
 
 type P2pSessionMgnt struct {
-	g *global
+	g *global //
 
 	quitChan chan struct{} // 退出
 
-	createSessChan chan *DispatchTask // 要创建的Task
-	startSessChan  chan *StartTask
-	stopSessChan   chan string // 要关闭的Task
-	sessions       map[string]*P2pSession
+	createSessChan chan *DispatchTask     // 要创建的Task
+	startSessChan  chan *StartTask        //
+	stopSessChan   chan string            // 要关闭的Task
+	sessions       map[string]*P2pSession //
 }
 
 func NewSessionMgnt(cfg *common.Config) *P2pSessionMgnt {
@@ -30,8 +30,8 @@ func NewSessionMgnt(cfg *common.Config) *P2pSessionMgnt {
 		g: &global{
 			cfg:        cfg,
 			fsProvider: OsFsProvider{},
-			cacher:     NewRamCacheProvider(cfg.Control.CacheSize)},
-
+			cacher:     NewRamCacheProvider(cfg.Control.CacheSize),
+		},
 		quitChan:       make(chan struct{}, 1),
 		createSessChan: make(chan *DispatchTask, cfg.Control.MaxActive),
 		startSessChan:  make(chan *StartTask, cfg.Control.MaxActive),
@@ -49,7 +49,7 @@ func (sm *P2pSessionMgnt) Start() error {
 	}
 	defer listener.Close()
 
-	checkSessChan := time.Tick(60 * time.Second) //每一分钟检查任务Session要清理
+	checkSessChan := time.Tick(60 * time.Second) //每一分钟检查任务Session是否要清理
 	for {
 		select {
 		case <-checkSessChan:

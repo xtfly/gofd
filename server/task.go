@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/xtfly/gofd/common"
 	"github.com/xtfly/gofd/p2p"
@@ -17,6 +18,7 @@ func NewTaskInfo(t *p2p.Task) *p2p.TaskInfo {
 	ti.Id = t.Id
 	init := p2p.TaskStatus_Init.String()
 	ti.Status = init
+	ti.StartedAt = time.Now()
 	ti.DispatchInfos = make(map[string]*p2p.DispatchInfo, len(t.DestIPs))
 	for _, ip := range t.DestIPs {
 		di := &p2p.DispatchInfo{}
