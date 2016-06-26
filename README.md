@@ -15,6 +15,20 @@ S端与BT的Tracker机制也不一样，它不会维护节点的已下载的文�
 GoFD目前正在开发，功能沿未完成。
 
 
+## 基本流程
+
+### 创建任务
+
+```sequence
+Title:创建任务
+Client->GoFD Server: POST /api/v1/server/tasks
+GoFD Server->Client: 200 OK
+GoFD Server->GoFD Client: POST /api/v1/client/tasks
+GoFD Client->GoFD Server: 200 OK
+GoFD Server->GoFD Client: POST /api/v1/client/tasks/start
+GoFD Client->GoFD Server: 200 OK
+ ```
+
 ## 测试
 
-curl -v -l -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks
+curl -v -l -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks
