@@ -157,6 +157,7 @@ func (p *peer) SendHave(piece uint32) {
 	haveMsg := make([]byte, 5)
 	haveMsg[0] = HAVE
 	uint32ToBytes(haveMsg[1:5], piece)
+	log.Debugf("[%s] send HAVE to peer[%s], piece=%v", p.taskId, p.address, piece)
 	p.sendMessage(haveMsg)
 }
 
@@ -169,5 +170,7 @@ func (p *peer) SendRequest(piece, begin, length int) {
 	requestIndex := (uint64(piece) << 32) | uint64(begin)
 
 	p.ourRequests[requestIndex] = time.Now()
+	log.Debugf("[%s] send REQUEST to peer[%s], piece=%v, begin=%v, length=%v",
+		p.taskId, p.address, piece, begin, length)
 	p.sendMessage(req)
 }

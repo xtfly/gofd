@@ -14,6 +14,7 @@ import (
 	"github.com/xtfly/gokits"
 )
 
+//------------------------------------------
 // POST /api/v1/server/tasks
 func (s *Server) CreateTask(c echo.Context) (err error) {
 	//  获取Body
@@ -25,6 +26,7 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 
 	// 检查任务是否存在
 	if _, ok := s.cache.Get(t.Id); ok {
+		// TODO:如果消息体是一样，支持重入
 		log.Debugf("[%s] Recv task, task is existed", t.Id)
 		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskExist.String())
 	}
@@ -34,7 +36,7 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 	s.cache.Set(ti.Id, ti, gokits.NoExpiration) // 任务完成之后再刷新过期时间
 
 	go s.doTask(t, ti)
-	return nil
+	return c.String(http.StatusAccepted, "")
 }
 
 func (s *Server) updateTask(ti *p2p.TaskInfo, ts p2p.TaskStatus) {
@@ -169,14 +171,22 @@ func (s *Server) waitClientRsp(ti *p2p.TaskInfo, allCount int, rspChan chan *Tas
 //------------------------------------------
 // DELETE /api/v1/server/tasks/:id
 func (s *Server) CancelTask(c echo.Context) error {
-	return nil
+	id := c.Param("id")
+	log.Infof("[%s] Recv cancel task", id)
+	if v, ok := s.cache.Get(id); !ok {
+		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
+	} else {
+		ti := v.(*p2p.TaskInfo)
+		s.stopAllClientTask(ti)
+		return c.JSON(http.StatusAccepted, v)
+	}
 }
 
 //------------------------------------------
 // GET /api/v1/server/tasks/:id
 func (s *Server) QueryTask(c echo.Context) error {
 	id := c.Param("id")
-
+	log.Infof("[%s] Recv query task", id)
 	if v, ok := s.cache.Get(id); !ok {
 		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
 	} else {
@@ -194,7 +204,7 @@ func (s *Server) ReportTask(c echo.Context) (err error) {
 		return
 	}
 
-	log.Infof("[%s] Recv task report, ip=%v, pecent=%v", csr.TaskId, csr.IP, csr.PercentComplete)
+	log.Debugf("[%s] Recv task report, ip=%v, pecent=%v", csr.TaskId, csr.IP, csr.PercentComplete)
 	// 检查任务是否存在
 	if v, ok := s.cache.Get(csr.TaskId); ok {
 		ti := v.(*p2p.TaskInfo)
@@ -202,7 +212,11 @@ func (s *Server) ReportTask(c echo.Context) (err error) {
 			if int(csr.PercentComplete) == 100 {
 				di.Status = p2p.TaskStatus_Completed.String()
 				di.FinishedAt = time.Now()
+			} else if int(csr.PercentComplete) == -1 {
+				di.Status = p2p.TaskStatus_Failed.String()
+				di.FinishedAt = time.Now()
 			}
+			di.PercentComplete = csr.PercentComplete
 		}
 
 		if ti.IsFinished() {

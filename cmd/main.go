@@ -6,13 +6,13 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/xtfly/gofd/client"
+	"github.com/xtfly/gofd/agent"
 	"github.com/xtfly/gofd/common"
 	"github.com/xtfly/gofd/server"
 )
 
 var (
-	c = flag.Bool("c", false, "start as a client")
+	a = flag.Bool("a", false, "start as a agent")
 	s = flag.Bool("s", false, "start as a server")
 )
 
@@ -24,7 +24,7 @@ func usage() {
 
 func main() {
 	flag.Parse()
-	if !*c && !*s {
+	if !*a && !*s {
 		fmt.Println("miss option")
 		usage()
 	}
@@ -50,9 +50,9 @@ func main() {
 		}
 	}
 
-	if *c {
-		if svc, err = client.NewClient(cfg); err != nil {
-			fmt.Printf("start client error, %s.\n", err.Error())
+	if *a {
+		if svc, err = agent.NewAgent(cfg); err != nil {
+			fmt.Printf("start agent error, %s.\n", err.Error())
 			os.Exit(4)
 		}
 	}

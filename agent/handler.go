@@ -1,4 +1,4 @@
-package client
+package agent
 
 import (
 	log "github.com/cihub/seelog"
@@ -6,8 +6,9 @@ import (
 	"github.com/xtfly/gofd/p2p"
 )
 
-// POST /api/v1/client/tasks
-func (svc *Client) CreateTask(c echo.Context) (err error) {
+//------------------------------------------
+// POST /api/v1/agent/tasks
+func (svc *Agent) CreateTask(c echo.Context) (err error) {
 	//  获取Body
 	dt := new(p2p.DispatchTask)
 	if err = c.Bind(dt); err != nil {
@@ -21,8 +22,9 @@ func (svc *Client) CreateTask(c echo.Context) (err error) {
 	return nil
 }
 
-// POST /api/v1/client/tasks/start
-func (svc *Client) StartTask(c echo.Context) (err error) {
+//------------------------------------------
+// POST /api/v1/agent/tasks/start
+func (svc *Agent) StartTask(c echo.Context) (err error) {
 	//  获取Body
 	st := new(p2p.StartTask)
 	if err = c.Bind(st); err != nil {
@@ -37,8 +39,8 @@ func (svc *Client) StartTask(c echo.Context) (err error) {
 }
 
 //------------------------------------------
-// DELETE /api/v1/client/tasks/:id
-func (svc *Client) CancelTask(c echo.Context) error {
+// DELETE /api/v1/agent/tasks/:id
+func (svc *Agent) CancelTask(c echo.Context) error {
 	id := c.Param("id")
 	log.Infof("[%s] Recv cancel ask request", id)
 	svc.sessionMgnt.StopTask(id)

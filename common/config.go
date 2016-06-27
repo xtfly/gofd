@@ -26,8 +26,8 @@ type Config struct {
 		MgntPort int    `yaml:"mgntPort"`
 		DataPort int    `yaml:"dataPort"`
 
-		ClientMgntPort int `yaml:"clientMgntPort,omitempty"`
-		ClientDataPort int `yaml:"clientDataPort,omitempty"`
+		AgentMgntPort int `yaml:"agentMgntPort,omitempty"`
+		AgentDataPort int `yaml:"agentDataPort,omitempty"`
 
 		Tls *struct {
 			Cert string `yaml:"cert"`
@@ -89,11 +89,11 @@ func (c *Config) defaultValue() {
 
 func (c *Config) validate() error {
 	if c.Server {
-		if c.Net.ClientMgntPort == 0 {
-			return errors.New("Not set Net.ClientMgntPort in server config file")
+		if c.Net.AgentMgntPort == 0 {
+			return errors.New("Not set Net.AgentMgntPort in server config file")
 		}
-		if c.Net.ClientDataPort == 0 {
-			return errors.New("Not set Net.ClientDataPort in server config file")
+		if c.Net.AgentDataPort == 0 {
+			return errors.New("Not set Net.AgentDataPort in server config file")
 		}
 	}
 

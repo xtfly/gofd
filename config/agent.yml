@@ -1,4 +1,4 @@
-name: client
+name: agent
 downdir: /Users/xiao/download
 log: /Users/xiao/Go/src/github.com/xtfly/gofd/config/log.xml
 net:

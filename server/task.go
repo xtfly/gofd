@@ -26,7 +26,7 @@ func NewTaskInfo(t *p2p.Task) *p2p.TaskInfo {
 		di.Status = init
 		di.DispatchFiles = make([]*p2p.DispatchFile, len(t.DispatchFiles))
 		for j, fn := range t.DispatchFiles {
-			df := &p2p.DispatchFile{FileName: fn, Status: init}
+			df := &p2p.DispatchFile{FileName: fn}
 			di.DispatchFiles[j] = df
 		}
 	}
@@ -44,7 +44,7 @@ func createLinkChain(cfg *common.Config, t *p2p.Task, ti *p2p.TaskInfo) *p2p.Lin
 	for _, ip := range t.DestIPs {
 		if ti != nil {
 			if di, ok := ti.DispatchInfos[ip]; ok && di.Status == p2p.TaskStatus_InProgress.String() {
-				lc.DispatchAddrs[idx] = fmt.Sprintf("%s:%v", ip, cfg.Net.ClientDataPort)
+				lc.DispatchAddrs[idx] = fmt.Sprintf("%s:%v", ip, cfg.Net.AgentDataPort)
 				idx++
 			}
 		}

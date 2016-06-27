@@ -38,7 +38,7 @@ func SendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rsp
 	}
 
 	if cfg.Server && !strings.Contains(addr, ":") {
-		addr = fmt.Sprintf("%s:%v", addr, cfg.Net.ClientMgntPort)
+		addr = fmt.Sprintf("%s:%v", addr, cfg.Net.AgentMgntPort)
 	}
 
 	url := fmt.Sprintf("%s://%s%s", schema, addr, urlpath)

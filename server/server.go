@@ -33,6 +33,7 @@ func NewServer(cfg *common.Config) (*Server, error) {
 func (s *Server) OnStart(c *common.Config, e *echo.Echo) error {
 	go func() { s.sessionMgnt.Start() }()
 
+	e.Use(authContext(s))
 	e.POST("/api/v1/server/tasks", s.CreateTask)
 	e.DELETE("/api/v1/server/tasks/:id", s.CancelTask)
 	e.GET("/api/v1/server/tasks/:id", s.QueryTask)
@@ -45,11 +46,11 @@ func (s *Server) OnStop(c *common.Config, e *echo.Echo) {
 	go func() { s.sessionMgnt.Stop() }()
 }
 
-// func setServerToContext(svc *Server) echo.MiddlewareFunc {
-// 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-// 		return func(c echo.Context) error {
-// 			c.Set(CXT_SERVER, svc)
-// 			return next(c)
-// 		}
-// 	}
-// }
+func authContext(svc *Server) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// TODO 认证
+			return next(c)
+		}
+	}
+}

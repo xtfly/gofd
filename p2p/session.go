@@ -106,7 +106,7 @@ func (s *P2pSession) initInServer() error {
 		s.pieceSet.Set(index)
 	}
 
-	log.Infof("[%s] Inited p2p server session...", s.taskId)
+	log.Infof("[%s] Inited p2p server session", s.taskId)
 	s.initedAt = time.Now()
 	return nil
 }
@@ -145,7 +145,7 @@ func (s *P2pSession) initInClient() error {
 	// 	}
 	// }
 
-	log.Infof("[%s] Inited p2p client session...", s.taskId)
+	log.Infof("[%s] Inited p2p client session", s.taskId)
 	s.initedAt = time.Now()
 	return nil
 }
@@ -174,7 +174,7 @@ func (s *P2pSession) startImp(st *StartTask) {
 	}
 
 	if s.totalPieces == s.goodPieces {
-		// TODO 本地文件的Piece与Block都下载完成，不再需要下载
+		// 本地文件的Piece与Block都下载完成，不再需要下载
 		log.Infof("[%s] All piece has already download.", s.taskId)
 		s.reportStatus(float32(100))
 		return
@@ -200,7 +200,7 @@ func (s *P2pSession) startImp(st *StartTask) {
 	s.tryNewPeer()
 	s.initPeersBitset()
 	s.startAt = time.Now()
-	log.Infof("[%s] Started p2p client session...", s.taskId)
+	log.Infof("[%s] Started p2p client session", s.taskId)
 }
 
 // 寻找可用的地址并连接
@@ -401,7 +401,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		}
 		return s.sendPiece(p, index, begin, length)
 	case PIECE: // 处理Peer发送过来的PIECE消息
-		log.Debugf("[%s] Recv PIECE from peer[%s] ", p.taskId, p.address)
+		log.Debugf("[%s] Recv PIECE from peer[%s]", p.taskId, p.address)
 		if len(message) < 9 {
 			return errors.New("unexpected message length")
 		}
@@ -442,7 +442,8 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 
 // 给Peer发送块消息
 func (s *P2pSession) sendPiece(p *peer, index, begin, length uint32) (err error) {
-	log.Debug("[", s.taskId, "] Sending block", index, begin, length)
+	log.Debugf("[%s] Sending block to peer[%s], index=%v, begin=%v, length=%v",
+		s.taskId, p.address, index, begin, length)
 	buf := make([]byte, length+9)
 	buf[0] = PIECE
 	uint32ToBytes(buf[1:5], index)
@@ -466,7 +467,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	delete(p.ourRequests, requestIndex)
 	v, ok := s.activePieces[int(piece)]
 	if !ok {
-		log.Debugf("[%s] Received a block we already have from peer[%] %v.%v.", s.taskId, p.address, piece, block)
+		log.Debugf("[%s] Received a block we already have from peer[%], piece=%v.%v", s.taskId, p.address, piece, block)
 		return
 	}
 
@@ -475,12 +476,13 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 		return
 	}
 
-	// 完成下载，清理资源，提交文件
+	// Piece完成下载，清理资源，提交文件
 	delete(s.activePieces, int(piece))
 	var pieceBytes []byte
 	ok, err, pieceBytes = checkPiece(s.fileStore, s.totalSize, s.task.MetaInfo, int(piece))
 	if !ok || err != nil {
-		log.Errorf("[%s] Closing peer[%s] that sent a bad piece %v. error=%v", s.taskId, p.address, piece, err)
+		log.Errorf("[%s] Closing peer[%s] that sent a bad piece=%v, error=%v", s.taskId, p.address, piece, err)
+		s.reportStatus(float32(-1))
 		p.Close()
 		return
 	}
@@ -494,13 +496,12 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	if s.totalPieces > 0 {
 		percentComplete = float32(s.goodPieces*100) / float32(s.totalPieces)
 	}
-	log.Debug("[", s.taskId, "] Have ", s.goodPieces, " of ", s.totalPieces,
-		"pieces ", percentComplete, "% complete")
+	log.Debugf("[%s] Have %v of %v pieces %v%% complete", s.taskId, s.goodPieces, s.totalPieces,
+		percentComplete)
 	if s.goodPieces == s.totalPieces {
-		// TODO 下载完成，上报状态
-		s.finishedAt = time.Now()
-		s.reportStatus(percentComplete)
+		s.finishedAt = time.Now() // 下载完成
 	}
+	s.reportStatus(percentComplete)
 
 	// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，
 	// 并把该消息发送给所有建立连接的Client Peer。
@@ -598,7 +599,7 @@ func (ts *P2pSession) requestBlockImp(p *peer, piece int, block int) {
 		}
 	}
 
-	log.Debugf("[%s] Requesting block from peer[%s], %v.%v, length=%v", ts.taskId, p.address, piece, block, length)
+	log.Debugf("[%s] Requesting block from peer[%s], piece=%v.%v, length=%v", ts.taskId, p.address, piece, block, length)
 	p.SendRequest(piece, begin, length)
 	return
 }
@@ -628,7 +629,7 @@ func (ts *P2pSession) shutdown() (err error) {
 	if ts.fileStore != nil {
 		err = ts.fileStore.Close()
 		if err != nil {
-			log.Error("[", ts.taskId, "] Error closing filestore:", err)
+			log.Errorf("[%s] Error closing filestore : %v", ts.taskId, err)
 		}
 	}
 	return

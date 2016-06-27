@@ -25,7 +25,8 @@ type TaskInfo struct {
 
 // 单个IP的分发信息
 type DispatchInfo struct {
-	Status string `json:"status"`
+	Status          string  `json:"status"`
+	PercentComplete float32 `json:"percentComplete"`
 
 	StartedAt  time.Time `json:"startedAt"`
 	FinishedAt time.Time `json:"finishedAt"`
@@ -35,8 +36,8 @@ type DispatchInfo struct {
 
 // 单个文件分发状态
 type DispatchFile struct {
-	FileName string `json:"filename"`
-	Status   string `json:"status"`
+	FileName        string  `json:"filename"`
+	PercentComplete float32 `json:"percentComplete"`
 }
 
 func (ti *TaskInfo) IsFinished() bool {
