@@ -6,9 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/xtfly/gokits"
 	"gopkg.in/yaml.v2"
 )
 
@@ -50,8 +48,12 @@ type Control struct {
 }
 
 func normalFile(dir string) string {
-	if !strings.HasPrefix(dir, "/") {
-		return filepath.Join(gokits.GetPwd(), dir)
+	if !filepath.IsAbs(dir) {
+		pwd, _ := os.Getwd()
+		dir = filepath.Join(pwd, dir)
+		dir, _ = filepath.Abs(dir)
+		dir = filepath.Clean(dir)
+		return dir
 	}
 	return dir
 }
@@ -68,8 +70,13 @@ func (c *Config) defaultValue() {
 		}
 	}
 
-	if c.Log != "" && !strings.HasPrefix(c.Log, "/") {
-		c.Log = filepath.Join(gokits.GetProcPwd(), c.Log)
+	if c.Log != "" {
+		c.Log = normalFile(c.Log)
+	}
+
+	if c.Net.Tls != nil {
+		c.Net.Tls.Cert = normalFile(c.Net.Tls.Cert)
+		c.Net.Tls.Key = normalFile(c.Net.Tls.Key)
 	}
 
 	if c.Control == nil {
