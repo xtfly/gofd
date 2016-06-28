@@ -9,10 +9,6 @@ import (
 	"github.com/xtfly/gokits"
 )
 
-const (
-	CXT_SERVER = "_server"
-)
-
 type Server struct {
 	common.BaseService
 	// 用于缓存当前接收到任务

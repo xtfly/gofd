@@ -1,8 +1,6 @@
 package p2p
 
 import (
-	"time"
-
 	log "github.com/cihub/seelog"
 	"github.com/xtfly/gofd/common"
 )
@@ -49,21 +47,10 @@ func (sm *P2pSessionMgnt) Start() error {
 	}
 	defer listener.Close()
 
-	checkSessChan := time.Tick(60 * time.Second) //每一分钟检查任务Session是否要清理
 	for {
 		select {
-		case <-checkSessChan:
-			for _, ts := range sm.sessions {
-				if ts.Timeout() {
-					log.Infof("[%s] P2p session is timeout, will be clean", ts.taskId)
-					delete(sm.sessions, ts.taskId)
-					ts.Quit()
-				} else {
-					log.Infof("[%s] Cached p2p task session", ts.taskId)
-				}
-			}
 		case task := <-sm.createSessChan:
-			if ts, err := NewP2pSession(sm.g, task); err != nil {
+			if ts, err := NewP2pSession(sm.g, task, sm.stopSessChan); err != nil {
 				log.Error("Could not create p2p task session.", err)
 			} else {
 				log.Infof("[%s] Created p2p task session", task.TaskId)

@@ -4,7 +4,7 @@ net:
     ip: 127.0.0.1
     mgntPort: 45000
     dataPort: 45001
-    agentMgntPort: 45010
+    agentMgntPort: 45010
     agentDataPort: 45011
     #tls:
     #    cert: /Users/xiao/server.crt

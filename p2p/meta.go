@@ -113,7 +113,6 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 		pieceLen = choosePieceLength(mi.Length)
 	}
 	mi.PieceLen = pieceLen
-	log.Debugf("File totallength=%v, piecelength=%v", mi.Length, pieceLen)
 
 	fileStoreFS := &FileStoreFileSystemAdapter{}
 	var fileStore FileStore
@@ -132,6 +131,7 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 		return nil, err
 	}
 	mi.Pieces = sums
+	log.Debugf("File totallength=%v, piecelength=%v, pieces=%s", mi.Length, pieceLen, mi.Pieces)
 	return mi, nil
 }
 

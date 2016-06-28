@@ -22,9 +22,9 @@ func NewTaskInfo(t *p2p.Task) *p2p.TaskInfo {
 	ti.DispatchInfos = make(map[string]*p2p.DispatchInfo, len(t.DestIPs))
 	for _, ip := range t.DestIPs {
 		di := &p2p.DispatchInfo{}
-		ti.DispatchInfos[ip] = di
 		di.Status = init
 		di.DispatchFiles = make([]*p2p.DispatchFile, len(t.DispatchFiles))
+		ti.DispatchInfos[ip] = di
 		for j, fn := range t.DispatchFiles {
 			df := &p2p.DispatchFile{FileName: fn}
 			di.DispatchFiles[j] = df

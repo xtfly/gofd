@@ -33,9 +33,10 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 
 	log.Infof("[%s] Recv task, file=%v, ips=%v", t.Id, t.DispatchFiles, t.DestIPs)
 	ti := NewTaskInfo(t)
-	s.cache.Set(ti.Id, ti, gokits.NoExpiration) // 任务完成之后再刷新过期时间
-
+	// 存在缓存中的不是指针对象，每次取出修改，需要更新，这主要是解决多个Goroutine访问的Race问题
+	s.cache.Set(ti.Id, ti, gokits.NoExpiration)
 	go s.doTask(t, ti)
+
 	return c.String(http.StatusAccepted, "")
 }
 
@@ -43,19 +44,21 @@ func (s *Server) updateTask(ti *p2p.TaskInfo, ts p2p.TaskStatus) {
 	log.Errorf("[%s] Task status changed, status=%v", ti.Id, ts)
 	ti.Status = ts.String()
 	ti.FinishedAt = time.Now()
-	// 设置缓存超时间
-	s.cache.UpdateExpiration(ti.Id, time.Now().Add(5*time.Minute).UnixNano())
+	s.cache.Replace(ti.Id, ti, 5*time.Minute)
 	s.sessionMgnt.StopTask(ti.Id)
 }
 
 func (s *Server) doTask(t *p2p.Task, ti *p2p.TaskInfo) {
 	// 先产生任务元数据信息
-	mi, err := p2p.CreateFileMeta(t.DispatchFiles, 512*1024)
+	start := time.Now()
+	mi, err := p2p.CreateFileMeta(t.DispatchFiles, 256*1024)
+	end := time.Now()
 	if err != nil {
 		log.Errorf("[%s] Create file meta failed, error=%v", ti.Id, err)
 		s.updateTask(ti, p2p.TaskStatus_FileNotExist)
 		return
 	}
+	log.Infof("[%s] Create metainfo: (%.2f seconds)", t.Id, end.Sub(start).Seconds())
 
 	dt := &p2p.DispatchTask{
 		TaskId:   t.Id,
@@ -80,7 +83,7 @@ func (s *Server) doTask(t *p2p.Task, ti *p2p.TaskInfo) {
 		// 提交到session管理中运行
 		s.sessionMgnt.CreateTask(dt)
 		// 给各节点发送创建分发任务的Rest消息
-		s.sendReqToClients(t.Id, t.DestIPs, "/api/v1/client/tasks", dtbytes, rspChan)
+		s.sendReqToClients(t.Id, t.DestIPs, "/api/v1/agent/tasks", dtbytes, rspChan)
 	}
 
 	// 等所有响应
@@ -91,7 +94,6 @@ func (s *Server) doTask(t *p2p.Task, ti *p2p.TaskInfo) {
 	if rspCount == allCount && ti.Status != p2p.TaskStatus_Failed.String() {
 		log.Infof("[%s] Recv all client response, will send start command to clients", t.Id)
 		st := &p2p.StartTask{TaskId: t.Id}
-		//log.Debugf("[%s] Create link chain, info=%v", ti.Id, ti)
 		st.LinkChain = createLinkChain(s.Cfg, t, ti)
 
 		stbytes, err1 := json.Marshal(st)
@@ -106,7 +108,7 @@ func (s *Server) doTask(t *p2p.Task, ti *p2p.TaskInfo) {
 		s.sessionMgnt.StartTask(st)
 
 		// 给其它各节点发送启支分发任务的Rest消息
-		s.sendReqToClients(t.Id, st.LinkChain.DispatchAddrs[1:], "/api/v1/client/tasks/start", stbytes, rspChan)
+		s.sendReqToClients(t.Id, st.LinkChain.DispatchAddrs[1:], "/api/v1/agent/tasks/start", stbytes, rspChan)
 		s.waitClientRsp(ti, allCount, rspChan)
 	}
 }
@@ -146,15 +148,13 @@ func (s *Server) waitClientRsp(ti *p2p.TaskInfo, allCount int, rspChan chan *Tas
 					di.FinishedAt = time.Now()
 					failCount++
 				}
+				s.cache.Replace(ti.Id, ti, gokits.NoExpiration)
 
 				if succCount == allCount {
 					fc = false
-				}
-
-				if failCount == allCount {
+				} else if failCount == allCount {
 					s.updateTask(ti, p2p.TaskStatus_Failed)
 					fc = false
-					break
 				}
 			}
 		case <-time.After(5 * time.Second): // 超时没有响应的
@@ -176,9 +176,9 @@ func (s *Server) CancelTask(c echo.Context) error {
 	if v, ok := s.cache.Get(id); !ok {
 		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
 	} else {
-		ti := v.(*p2p.TaskInfo)
-		s.stopAllClientTask(ti)
-		return c.JSON(http.StatusAccepted, v)
+		ti := v.(p2p.TaskInfo)
+		s.stopAllClientTask(&ti)
+		return c.JSON(http.StatusAccepted, "")
 	}
 }
 
@@ -218,6 +218,7 @@ func (s *Server) ReportTask(c echo.Context) (err error) {
 			}
 			di.PercentComplete = csr.PercentComplete
 		}
+		s.cache.Replace(ti.Id, ti, gokits.NoExpiration)
 
 		if ti.IsFinished() {
 			s.stopAllClientTask(ti)
@@ -229,9 +230,9 @@ func (s *Server) ReportTask(c echo.Context) (err error) {
 
 // 给所有客户端发送停止命令
 func (s *Server) stopAllClientTask(ti *p2p.TaskInfo) {
-	url := "/api/v1/client/tasks/" + ti.Id
+	url := "/api/v1/agent/tasks/" + ti.Id
 	s.sessionMgnt.StopTask(ti.Id)
-	s.cache.UpdateExpiration(ti.Id, time.Now().Add(5*time.Minute).UnixNano())
+	s.cache.Replace(ti.Id, ti, 5*time.Minute)
 	for ip, _ := range ti.DispatchInfos {
 		go func(ip string) {
 			if err2 := s.HttpDelete(ip, url); err2 != nil {
