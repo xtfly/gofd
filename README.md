@@ -55,7 +55,9 @@ net:
         key: /Users/xiao/server.key
 auth:
     username: gofd #管理端口与数据端口用于认证的用户名
-    passowrd: AFDAFAFEWFAGAGAGAG #管理端口与数据端口用于认证的密码
+    passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= #管理端口与数据端口用于认证的密码
+    factor: 9427e80d # passwd加密密钥因子
+    crc: 63F7  # passwd加密密钥因子的校验码
 contorl:
     speed: 10  # 流量控制，单位为MBps
     cacheSize: 50 # 文件下载的内存缓存大小，单位为MB
@@ -77,19 +79,28 @@ net:
         key: /Users/xiao/server.key
 auth:
     username: gofd
-    passowrd: AFDAFAFEWFAGAGAGAG
+    passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= 
+    factor: 9427e80d
+    crc: 63F7
 contorl:
     cacheSize: 50 # unit is MB
     maxActive: 10
 ```
 
+使用命令行`gofd -p <passwd明文>`生成加密密钥因子，密码：
+
+    $ gofd -p gofd
+    factor = 28711f5d
+    crc = 3084
+    stxt = BkrjWALvWhXrLjVXQMUDzyEcX7UpAdDG+uoedDOfeVo=
+
 ### 启动Server
 
-    gofd -s /Users/xiao/gofd/config/server.yml
+    $ gofd -s /Users/xiao/gofd/config/server.yml
 
 ### 启动Agent
 
-    gofd -a /Users/xiao/gofd/config/agent.yml
+    $ gofd -a /Users/xiao/gofd/config/agent.yml
 
 ## 基本流程
 
@@ -112,5 +123,5 @@ TBD
 
  * 创建分发任务
     
-        curl -v -l -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks
+        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks
 

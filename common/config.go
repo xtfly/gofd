@@ -7,13 +7,17 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/xtfly/gokits"
+
 	"gopkg.in/yaml.v2"
 )
 
 // 定义配置映射的结构体
 type Config struct {
-	Server bool   //是否为服务端
-	Name   string `yaml:"name"`
+	Server bool //是否为服务端
+	Crypto *gokits.Crypto
+
+	Name string `yaml:"name"`
 
 	DownDir string `yaml:"downdir,omitempty"` //只有客户端才配置
 
@@ -36,6 +40,8 @@ type Config struct {
 	Auth struct {
 		Username string `yaml:"username"`
 		Passowrd string `yaml:"passowrd"`
+		Factor   string `yaml:"factor"`
+		Crc      string `yaml:"crc"`
 	} `yaml:"auth"`
 
 	Control *Control `yaml:"control"`
@@ -108,6 +114,20 @@ func (c *Config) validate() error {
 		if c.DownDir == "" {
 			return errors.New("Not set DownDir in client config file")
 		}
+	}
+
+	if c.Auth.Username == "" || c.Auth.Passowrd == "" || c.Auth.Factor == "" || c.Auth.Crc == "" {
+		return errors.New("Not set auth in  config file")
+	}
+
+	var err error
+	c.Crypto, err = gokits.NewCrypto(c.Auth.Factor, c.Auth.Crc)
+	if err != nil {
+		return err
+	}
+	c.Auth.Passowrd, err = c.Crypto.DecryptStr(c.Auth.Passowrd)
+	if err != nil {
+		return err
 	}
 
 	return nil

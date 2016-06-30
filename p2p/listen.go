@@ -9,6 +9,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/xtfly/gofd/common"
+	"github.com/xtfly/gokits"
 )
 
 // P2pConn wraps an incoming network connection and contains metadata that helps
@@ -20,8 +21,8 @@ type P2pConn struct {
 	taskId     string
 }
 
-// listenForPeerConnections listens on a TCP port for incoming connections and
-// demuxes them to the appropriate active p2pSession based on the InfoHash
+// StartListen listens on a TCP port for incoming connections and
+// demuxes them to the appropriate active p2pSession based on the taskId
 // in the header.
 func StartListen(cfg *common.Config) (conChan chan *P2pConn, listener net.Listener, err error) {
 	listener, err = CreateListener(cfg)
@@ -87,7 +88,7 @@ func CreateListener(cfg *common.Config) (listener net.Listener, err error) {
 		return
 	}
 
-	log.Info("Listening for peers on port:", cfg.Net.DataPort)
+	log.Infof("Listening for peers on %s:%v", cfg.Net.IP, cfg.Net.DataPort)
 	return
 }
 
@@ -117,43 +118,40 @@ func readHeader(conn net.Conn) (h *Header, err error) {
 	h.Len = bslen
 	buf := bytes.NewBuffer(bs)
 
-	// taskId
-	if h.TaskId, err = buf.ReadString(byte(0x00)); err != nil {
-		err = fmt.Errorf("Read taskId error: %v", err)
+	if h.TaskId, err = readString(buf); err != nil {
 		return
 	}
-	h.TaskId = h.TaskId[:len(h.TaskId)-1]
 
-	// username
-	if h.Username, err = buf.ReadString(byte(0x00)); err != nil {
-		err = fmt.Errorf("Read username error: %v", err)
+	if h.Username, err = readString(buf); err != nil {
 		return
 	}
-	h.Username = h.Username[:len(h.Username)-1]
 
-	// password
-	if h.Passowrd, err = buf.ReadString(byte(0x00)); err != nil {
-		err = fmt.Errorf("Read password error: %v", err)
+	if h.Passowrd, err = readString(buf); err != nil {
 		return
 	}
-	h.Passowrd = h.Passowrd[:len(h.Passowrd)-1]
 
-	// seed
-	if h.Seed, err = buf.ReadString(byte(0x00)); err != nil {
-		err = fmt.Errorf("Read password error: %v", err)
+	if h.Salt, err = readString(buf); err != nil {
 		return
 	}
-	h.Seed = h.Seed[:len(h.Seed)-1]
 
 	return
 }
 
+func readString(buf *bytes.Buffer) (str string, err error) {
+	if str, err = buf.ReadString(byte(0x00)); err != nil {
+		err = fmt.Errorf("Read string error: %v", err)
+		return
+	}
+	str = str[:len(str)-1]
+	return
+}
+
 func writeHeader(conn net.Conn, taskId string, cfg *common.Config) (err error) {
-	// TODO 安全编码
+	pwd, salt := gokits.GenPasswd(cfg.Auth.Passowrd, 8)
 	all := [][]byte{[]byte(taskId),
 		[]byte(cfg.Auth.Username),
-		[]byte(cfg.Auth.Passowrd),
-		[]byte("12345678")}
+		[]byte(pwd),
+		[]byte(salt)}
 
 	buf := bytes.NewBuffer(make([]byte, 0))
 	blen := 0
@@ -172,5 +170,13 @@ func writeHeader(conn net.Conn, taskId string, cfg *common.Config) (err error) {
 }
 
 func (h *Header) validate(cfg *common.Config) error {
+	if h.Username != cfg.Auth.Username {
+		return fmt.Errorf("username or password is incorrect")
+	}
+
+	if !gokits.CmpPasswd(cfg.Auth.Passowrd, h.Salt, h.Passowrd) {
+		return fmt.Errorf("username or password is incorrect")
+	}
+
 	return nil
 }

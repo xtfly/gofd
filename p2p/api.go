@@ -37,32 +37,7 @@ type DispatchInfo struct {
 // 单个文件分发状态
 type DispatchFile struct {
 	FileName        string  `json:"filename"`
-	PercentComplete float32 `json:"percentComplete"`
-}
-
-func (ti *TaskInfo) IsFinished() bool {
-	completed := 0
-	failed := 0
-	for _, v := range ti.DispatchInfos {
-		if v.Status == TaskStatus_Completed.String() {
-			completed++
-		}
-		if v.Status == TaskStatus_Failed.String() {
-			failed++
-		}
-	}
-
-	if completed == len(ti.DispatchInfos) {
-		ti.Status = TaskStatus_Completed.String()
-		return true
-	}
-
-	if completed+failed == len(ti.DispatchInfos) {
-		ti.Status = TaskStatus_Failed.String()
-		return true
-	}
-
-	return false
+	PercentComplete float32 `json:"-"`
 }
 
 // 任务状态
@@ -145,7 +120,7 @@ type Header struct {
 	TaskId   string
 	Username string
 	Passowrd string
-	Seed     string
+	Salt     string
 }
 
 // TODO

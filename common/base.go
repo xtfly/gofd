@@ -103,3 +103,10 @@ func (s *BaseService) OnStop(c *Config, e *echo.Echo) {}
 func (s *BaseService) IsRunning() bool {
 	return atomic.LoadUint32(&s.running) == 1
 }
+
+func (s *BaseService) Auth(u, p string) bool {
+	if u == s.Cfg.Auth.Username && p == s.Cfg.Auth.Passowrd {
+		return true
+	}
+	return false
+}

@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// a torrent FileSystem that is backed by real OS files
+// a  FileSystem that is backed by real OS files
 type osFileSystem struct {
 }
 
-// A torrent File that is backed by an OS file
+// A File that is backed by an OS file
 type osFile struct {
 	filePath string
 }

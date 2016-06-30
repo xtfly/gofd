@@ -24,7 +24,7 @@ type MetaInfoFile interface {
 	Stat() (os.FileInfo, error)
 }
 
-// Adapt a MetaInfoFileSystem into a torrent file store FileSystem
+// Adapt a MetaInfoFileSystem into a file store FileSystem
 type FileStoreFileSystemAdapter struct {
 }
 
@@ -131,7 +131,7 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 		return nil, err
 	}
 	mi.Pieces = sums
-	log.Debugf("File totallength=%v, piecelength=%v, pieces=%s", mi.Length, pieceLen, mi.Pieces)
+	log.Debugf("File totallength=%v, piecelength=%v", mi.Length, pieceLen)
 	return mi, nil
 }
 

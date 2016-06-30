@@ -9,24 +9,37 @@ import (
 	"github.com/xtfly/gofd/agent"
 	"github.com/xtfly/gofd/common"
 	"github.com/xtfly/gofd/server"
+	"github.com/xtfly/gokits"
 )
 
 var (
 	a = flag.Bool("a", false, "start as a agent")
 	s = flag.Bool("s", false, "start as a server")
+	p = flag.String("p", "", "create a password encrypted by AES128")
 )
 
 func usage() {
-	fmt.Println("gofd [OPTION] <configfile>")
+	fmt.Println("gofd [<-a|-s> <configfile>] [-p <passwd>]")
 	flag.PrintDefaults()
 	os.Exit(2)
 }
 
 func main() {
 	flag.Parse()
-	if !*a && !*s {
+	if !*a && !*s && *p == "" {
 		fmt.Println("miss option")
 		usage()
+	}
+
+	if *p != "" {
+		factor := gokits.NewRand(8)
+		crc := gokits.KermitStr(factor)
+		crypto, _ := gokits.NewCrypto(factor, crc)
+		stxt, _ := crypto.EncryptStr(*p)
+		fmt.Println("factor =", factor)
+		fmt.Println("crc =", crc)
+		fmt.Println("stxt =", stxt)
+		return
 	}
 
 	if flag.NArg() < 1 {

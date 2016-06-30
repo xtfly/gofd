@@ -16,6 +16,9 @@ import (
 const (
 	// 同一地址最大连接次数
 	MAX_RETRY_CONNECT_TIMES = 10
+
+	// 最大上报状态重试次数
+	MAX_RTY_REPORT_TIMES = 10
 )
 
 type P2pSession struct {
@@ -169,7 +172,7 @@ func (s *P2pSession) startImp(st *StartTask) {
 	if s.totalPieces == s.goodPieces {
 		// 本地文件的Piece与Block都下载完成，不再需要下载
 		log.Infof("[%s] All piece has already download.", s.taskId)
-		go s.reportStatus(float32(100))
+		go s.reportStatus(float32(100), MAX_RTY_REPORT_TIMES)
 		return
 	}
 
@@ -437,6 +440,7 @@ func (s *P2pSession) sendPiece(p *peer, index, begin, length uint32) (err error)
 	_, err = s.fileStore.ReadAt(buf[9:],
 		int64(index)*s.task.MetaInfo.PieceLen+int64(begin))
 	if err != nil {
+		log.Errorf("[%s] Read file failed, error=%v", s.taskId, err)
 		return
 	}
 	p.sendMessage(buf)
@@ -453,7 +457,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	delete(p.ourRequests, requestIndex)
 	v, ok := s.activePieces[int(piece)]
 	if !ok {
-		log.Debugf("[%s] Received a block we already have from peer[%], piece=%v.%v", s.taskId, p.address, piece, block)
+		log.Debugf("[%s] Received a block we already have from peer[%s], piece=%v.%v", s.taskId, p.address, piece, block)
 		return
 	}
 
@@ -468,7 +472,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	ok, err, pieceBytes = checkPiece(s.fileStore, s.totalSize, s.task.MetaInfo, int(piece))
 	if !ok || err != nil {
 		log.Errorf("[%s] Closing peer[%s] that sent a bad piece=%v, error=%v", s.taskId, p.address, piece, err)
-		go s.reportStatus(float32(-1))
+		go s.reportStatus(float32(-1), MAX_RTY_REPORT_TIMES)
 		p.Close()
 		return
 	}
@@ -487,7 +491,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	if s.goodPieces == s.totalPieces {
 		s.finishedAt = time.Now() // 下载完成
 	}
-	go s.reportStatus(percentComplete)
+	go s.reportStatus(percentComplete, MAX_RTY_REPORT_TIMES)
 
 	// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，
 	// 并把该消息发送给所有建立连接的Client Peer。
@@ -750,25 +754,31 @@ func (ts *P2pSession) timeout() bool {
 	return false
 }
 
-func (ts *P2pSession) reportStatus(pecent float32) {
-	csr := ClientStatusReport{
+func (ts *P2pSession) reportStatus(pecent float32, times int) {
+	if times == 0 {
+		ts.Quit()
+		return
+	}
+
+	csr := &ClientStatusReport{
 		TaskId:          ts.taskId,
 		IP:              ts.g.cfg.Net.IP,
 		PercentComplete: pecent,
 	}
-	bytes, err := json.Marshal(csr)
+	bs, err := json.Marshal(csr)
 	if err != nil {
 		log.Errorf("[%s] Report session status failed. error=%v", ts.taskId, err)
 		return
 	}
 
-	_, err = common.SendHttpReq(ts.g.cfg, "POST", ts.task.LinkChain.ServerAddr,
-		"/api/v1/server/tasks/status", bytes)
+	_, err = common.SendHttpReq(ts.g.cfg, "POST",
+		ts.task.LinkChain.ServerAddr, "/api/v1/server/tasks/status", bs)
 	if err != nil {
 		log.Errorf("[%s] Report session status failed. error=%v", ts.taskId, err)
 		select {
 		case <-time.After(1 * time.Second):
-			ts.reportStatus(pecent)
+			times--
+			ts.reportStatus(pecent, times)
 		}
 		return
 	}
