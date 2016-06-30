@@ -12,7 +12,6 @@ P2P是一个简化版本的BT协议实现，只使用了其中四个消息（HAV
 S端与BT的Tracker机制也不一样，它不会维护节点的已下载的文件信息。C端下载文件完成之后也不会再做为种子。
 节点之间也没有BT的激励机制，所以没有CHOKE与UNCHOKE消息。
 
-GoFD目前正在开发，功能沿未完成。
 
 ## 第三方依赖
 
@@ -135,4 +134,4 @@ TBD
 
  * 取消分发任务
 
-        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X DELETE http://127.0.0.1:45000/api/v1/server/tasks/1
+        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X DELETE http://127.0.0.1:45000/api/v1/server/tasks/1
