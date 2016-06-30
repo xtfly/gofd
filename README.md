@@ -126,6 +126,13 @@ TBD
 ## 测试
 
  * 创建分发任务
-    
+
         curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks
 
+ * 查询分发任务
+
+        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X GET http://127.0.0.1:45000/api/v1/server/tasks/1
+
+ * 取消分发任务
+
+        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X DELETE http://127.0.0.1:45000/api/v1/server/tasks/1
