@@ -26,6 +26,10 @@ GoFD目前正在开发，功能沿未完成。
 ### 下载依赖与GoFD
 
     go get github.com/labstack/echo
+    go get github.com/labstack/gommon
+    go get github.com/valyala/fasthttp
+    go get golang.org/x/net # 需要翻墙或git clone github.com/golang/net
+    go get github.com/dgrijalva/jwt-go
     go get github.com/cihub/seelog
     go get gopkg.in/yaml.v2
     go get github.com/xtfly/gokits
