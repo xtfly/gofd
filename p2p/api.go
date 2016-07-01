@@ -89,10 +89,10 @@ type MetaInfo struct {
 	Length   int64       `json:"length"`
 	PieceLen int64       `json:"PieceLen"`
 	Pieces   []byte      `json:"pieces"`
-	Files    []*FileDict `json:"files"` // Multiple File
+	Files    []*FileDict `json:"files"`
 }
 
-// 下发给客户端的分发任务
+// 下发给Agent的分发任务
 type DispatchTask struct {
 	TaskId    string     `json:"taskId"`
 	MetaInfo  *MetaInfo  `json:"metaInfo"`
@@ -100,7 +100,7 @@ type DispatchTask struct {
 	Speed     int64      `json:"speed"`
 }
 
-// 下发给客户端的分发任务
+// 下发给Agent的分发任务
 type StartTask struct {
 	TaskId    string     `json:"taskId"`
 	LinkChain *LinkChain `json:"linkChain"`
@@ -124,7 +124,7 @@ type Header struct {
 }
 
 // TODO
-type ClientStatusReport struct {
+type StatusReport struct {
 	TaskId          string  `json:"taskId"`
 	IP              string  `json:"ip"`
 	PercentComplete float32 `json:"percentComplete"`

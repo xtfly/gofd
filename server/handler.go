@@ -20,10 +20,14 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 	}
 
 	// 检查任务是否存在
-	if _, ok := s.cache.Get(t.Id); ok {
-		// TODO:如果消息体是一样，支持重入
-		log.Debugf("[%s] Recv task, task is existed", t.Id)
-		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskExist.String())
+	if v, ok := s.cache.Get(t.Id); ok {
+		cti := v.(*CachedTaskInfo)
+		if cti.EqualCmp(t) {
+			return c.String(http.StatusAccepted, "")
+		} else {
+			log.Debugf("[%s] Recv task, task is existed", t.Id)
+			return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskExist.String())
+		}
 	}
 
 	log.Infof("[%s] Recv task, file=%v, ips=%v", t.Id, t.DispatchFiles, t.DestIPs)
@@ -59,10 +63,7 @@ func (s *Server) QueryTask(c echo.Context) error {
 		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
 	} else {
 		cti := v.(*CachedTaskInfo)
-		qchan := make(chan *p2p.TaskInfo, 2)
-		cti.Query(qchan)
-		defer close(qchan)
-		return c.JSON(http.StatusOK, <-qchan)
+		return c.JSON(http.StatusOK, <-cti.Query())
 	}
 }
 
@@ -70,7 +71,7 @@ func (s *Server) QueryTask(c echo.Context) error {
 // POST /api/v1/server/tasks/status
 func (s *Server) ReportTask(c echo.Context) (err error) {
 	//  获取Body
-	csr := new(p2p.ClientStatusReport)
+	csr := new(p2p.StatusReport)
 	if err = c.Bind(csr); err != nil {
 		log.Errorf("Recv [%s] request, decode body failed. %v", c.Request().URL(), err)
 		return

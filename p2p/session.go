@@ -372,7 +372,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		if err != nil {
 			return err
 		}
-		// TODO go sendPiece可能产生Race问题
+		// 注意 go sendPiece不要操作Sesion的成员变量，否则可能产生Race问题
 		go s.sendPiece(p, index, begin, length)
 	case PIECE: // 处理Peer发送过来的PIECE消息
 		log.Debugf("[%s] Recv PIECE from peer[%s]", p.taskId, p.address)
@@ -383,6 +383,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 
 		if s.pieceSet.IsSet(int(index)) {
 			log.Debugf("[%s] Recv PIECE from peer[%s] is already", p.taskId, p.address)
+			err = s.RequestBlock(p)
 			break //  本Peer已存在此Piece，则继续
 		}
 
@@ -760,7 +761,7 @@ func (ts *P2pSession) reportStatus(pecent float32, times int) {
 		return
 	}
 
-	csr := &ClientStatusReport{
+	csr := &StatusReport{
 		TaskId:          ts.taskId,
 		IP:              ts.g.cfg.Net.IP,
 		PercentComplete: pecent,
