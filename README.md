@@ -109,11 +109,11 @@ contorl:
 
 ### 创建任务
 
-![create_task](docs/images/create_task.svg)
+[点击查看图片](docs/images/create_task.svg)
 
 #### Agent之间文件分发
 
-![tans_file](docs/images/trans_file.svg)
+[点击查看图片](docs/images/trans_file.svg)
 
 ## 测试
 
