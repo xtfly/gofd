@@ -100,7 +100,7 @@ func (ct *CachedTaskInfo) Start() {
 	for {
 		select {
 		case <-ct.stopChan:
-			ct.ti.Status = p2p.TaskStatus_Failed.String()
+			ct.endTask(p2p.TaskStatus_Failed)
 			ct.stopAllClientTask()
 			return
 		case c := <-ct.cmpChan:
@@ -120,7 +120,8 @@ func (ct *CachedTaskInfo) Start() {
 			}
 		case csr := <-ct.reportChan:
 			ct.reportStatus(csr)
-			if checkFinished(ct.ti) {
+			if ts, ok := checkFinished(ct.ti); ok {
+				ct.endTask(ts)
 				ct.stopAllClientTask()
 				return
 			}
@@ -132,6 +133,7 @@ func (ct *CachedTaskInfo) endTask(ts p2p.TaskStatus) {
 	log.Errorf("[%s] Task status changed, status=%v", ct.id, ts)
 	ct.ti.Status = ts.String()
 	ct.ti.FinishedAt = time.Now()
+	log.Infof("[%s] Task elapsed time: (%.2f seconds)", ct.id, ct.ti.FinishedAt.Sub(ct.ti.StartedAt).Seconds())
 	ct.s.cache.Replace(ct.id, ct, 5*time.Minute)
 	ct.s.sessionMgnt.StopTask(ct.id)
 }
@@ -262,7 +264,6 @@ func (ct *CachedTaskInfo) sendReqToClients(ips []string, url string, body []byte
 func (ct *CachedTaskInfo) stopAllClientTask() {
 	url := "/api/v1/agent/tasks/" + ct.id
 	ct.s.sessionMgnt.StopTask(ct.id)
-	ct.s.cache.Replace(ct.id, ct, 5*time.Minute)
 	for _, ip := range ct.destIPs {
 		go func(ip string) {
 			if err2 := ct.s.HttpDelete(ip, url); err2 != nil {
@@ -290,16 +291,18 @@ func (ct *CachedTaskInfo) reportStatus(csr *p2p.StatusReport) {
 func (ct *CachedTaskInfo) Query() <-chan *p2p.TaskInfo {
 	qchan := make(chan *p2p.TaskInfo, 2)
 	qchan <- ct.ti
+	close(qchan)
 	return qchan
 }
 
 func (ct *CachedTaskInfo) EqualCmp(t *p2p.Task) bool {
 	cchan := make(chan bool, 2)
 	ct.cmpChan <- &cmpTask{t: t, out: cchan}
+	close(cchan)
 	return <-cchan
 }
 
-func checkFinished(ti *p2p.TaskInfo) bool {
+func checkFinished(ti *p2p.TaskInfo) (p2p.TaskStatus, bool) {
 	completed := 0
 	failed := 0
 	for _, v := range ti.DispatchInfos {
@@ -312,16 +315,14 @@ func checkFinished(ti *p2p.TaskInfo) bool {
 	}
 
 	if completed == len(ti.DispatchInfos) {
-		ti.Status = p2p.TaskStatus_Completed.String()
-		return true
+		return p2p.TaskStatus_Completed, true
 	}
 
 	if completed+failed == len(ti.DispatchInfos) {
-		ti.Status = p2p.TaskStatus_Failed.String()
-		return true
+		return p2p.TaskStatus_Completed, true
 	}
 
-	return false
+	return p2p.TaskStatus_InProgress, false
 }
 
 func equalSlice(a, b []string) bool {

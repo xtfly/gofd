@@ -634,7 +634,7 @@ func (ts *P2pSession) pieceLength(piece int) int {
 func (ts *P2pSession) Quit() (err error) {
 	select {
 	case ts.quitChan <- struct{}{}:
-	case <-ts.endedChan: // 接收到close才算真正quit
+	case <-ts.endedChan: // 防quit阻塞
 	}
 	return
 }

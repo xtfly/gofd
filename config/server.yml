@@ -6,9 +6,9 @@ net:
     dataPort: 45001
     agentMgntPort: 45010
     agentDataPort: 45011
-    #tls:
-    #    cert: /Users/xiao/server.crt
-    #    key: /Users/xiao/server.key
+    tls:
+        cert: /Users/xiao/server.crt
+        key: /Users/xiao/server.key
 auth:
     username: gofd
     passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc=

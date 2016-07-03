@@ -1,4 +1,4 @@
-<seelog type="sync" minlevel="debug" maxlevel="error">
+<seelog type="sync" minlevel="info" maxlevel="error">
     <outputs formatid="main">
         <console/>
     </outputs>

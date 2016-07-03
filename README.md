@@ -42,7 +42,7 @@ S端与BT的Tracker机制也不一样，它不会维护节点的已下载的文�
 
 #### 配置Server与Agent
 
-GoFD的Server与Agent的配置采用Yaml格式，Server样例如下：
+GoFD的Server与Agent的配置采用Yaml格式，其中涉及到文件路径需要采用绝对路径，Server样例如下：
 
 ```
 name: server #名称
@@ -109,29 +109,22 @@ contorl:
 
 ### 创建任务
 
-```sequence
-Title:创建任务
-Client->GoFD Server: POST /api/v1/server/tasks
-GoFD Server->Client: 200 OK
-GoFD Server->GoFD Agent: POST /api/v1/agent/tasks
-GoFD Agent->GoFD Server: 200 OK
-GoFD Server->GoFD Agent: POST /api/v1/agent/tasks/start
-GoFD Agent->GoFD Server: 200 OK
- ```
+![create_task](docs/images/create_task.svg)
+
 #### Agent之间文件分发
 
-TBD
+![tans_file](docs/images/trans_file.svg)
 
 ## 测试
 
  * 创建分发任务
 
-        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' http://127.0.0.1:45000/api/v1/server/tasks
+        curl  -l --insecure --basic -u "gofd:gofd" -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' https://127.0.0.1:45000/api/v1/server/tasks
 
  * 查询分发任务
 
-        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X GET http://127.0.0.1:45000/api/v1/server/tasks/1
+        curl  -l --insecure --basic -u "gofd:gofd" -H "Content-type: application/json" -X GET https://127.0.0.1:45000/api/v1/server/tasks/1
 
  * 取消分发任务
 
-        curl  -l --basic -u "gofd:gofd" -H "Content-type: application/json" -X DELETE http://127.0.0.1:45000/api/v1/server/tasks/1
+        curl  -l --insecure --basic -u "gofd:gofd" -H "Content-type: application/json" -X DELETE https://127.0.0.1:45000/api/v1/server/tasks/1
