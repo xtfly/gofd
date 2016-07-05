@@ -63,7 +63,7 @@ func (s *Server) QueryTask(c echo.Context) error {
 		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
 	} else {
 		cti := v.(*CachedTaskInfo)
-		return c.JSON(http.StatusOK, <-cti.Query())
+		return c.JSON(http.StatusOK, cti.Query())
 	}
 }
 

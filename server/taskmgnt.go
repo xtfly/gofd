@@ -22,6 +22,10 @@ type cmpTask struct {
 	out chan bool
 }
 
+type queryTask struct {
+	out chan *p2p.TaskInfo
+}
+
 // 每一个Task，对应一个缓存对象，所有与它关联的操作都由一个Goroutine来处理
 type CachedTaskInfo struct {
 	s *Server
@@ -39,6 +43,7 @@ type CachedTaskInfo struct {
 	reportChan   chan *p2p.StatusReport
 	agentRspChan chan *clientRsp
 	cmpChan      chan *cmpTask
+	queryChan    chan *queryTask
 }
 
 func NewCachedTaskInfo(s *Server, t *p2p.Task) *CachedTaskInfo {
@@ -52,7 +57,8 @@ func NewCachedTaskInfo(s *Server, t *p2p.Task) *CachedTaskInfo {
 		stopChan:     make(chan struct{}),
 		reportChan:   make(chan *p2p.StatusReport, 10),
 		agentRspChan: make(chan *clientRsp, 10),
-		cmpChan:      make(chan *cmpTask),
+		cmpChan:      make(chan *cmpTask, 2),
+		queryChan:    make(chan *queryTask, 2),
 	}
 }
 
@@ -118,6 +124,8 @@ func (ct *CachedTaskInfo) Start() {
 					return
 				}
 			}
+		case q := <-ct.queryChan:
+			q.out <- ct.ti
 		case csr := <-ct.reportChan:
 			ct.reportStatus(csr)
 			if ts, ok := checkFinished(ct.ti); ok {
@@ -280,25 +288,27 @@ func (ct *CachedTaskInfo) reportStatus(csr *p2p.StatusReport) {
 		if int(csr.PercentComplete) == 100 {
 			di.Status = p2p.TaskStatus_Completed.String()
 			di.FinishedAt = time.Now()
+			log.Infof("[%s] Recv report task status is completed, ip=%s", ct.id, csr.IP)
 		} else if int(csr.PercentComplete) == -1 {
 			di.Status = p2p.TaskStatus_Failed.String()
 			di.FinishedAt = time.Now()
+			log.Infof("[%s] Recv report task status is failed, ip=%s", ct.id, csr.IP)
 		}
 		di.PercentComplete = csr.PercentComplete
 	}
 }
 
-func (ct *CachedTaskInfo) Query() <-chan *p2p.TaskInfo {
+func (ct *CachedTaskInfo) Query() *p2p.TaskInfo {
 	qchan := make(chan *p2p.TaskInfo, 2)
-	qchan <- ct.ti
-	close(qchan)
-	return qchan
+	ct.queryChan <- &queryTask{out: qchan}
+	defer close(qchan)
+	return <-qchan
 }
 
 func (ct *CachedTaskInfo) EqualCmp(t *p2p.Task) bool {
 	cchan := make(chan bool, 2)
 	ct.cmpChan <- &cmpTask{t: t, out: cchan}
-	close(cchan)
+	defer close(cchan)
 	return <-cchan
 }
 
@@ -314,11 +324,12 @@ func checkFinished(ti *p2p.TaskInfo) (p2p.TaskStatus, bool) {
 		}
 	}
 
-	if completed == len(ti.DispatchInfos) {
+	count := len(ti.DispatchInfos)
+	if completed == count {
 		return p2p.TaskStatus_Completed, true
 	}
 
-	if completed+failed == len(ti.DispatchInfos) {
+	if completed+failed == count {
 		return p2p.TaskStatus_Completed, true
 	}
 

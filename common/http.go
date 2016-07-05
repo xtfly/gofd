@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,17 +25,28 @@ func (s *BaseService) HttpDelete(addr, urlpath string) (err error) {
 	return
 }
 
-func SendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
+func CreateHttpClient(cfg *Config) *http.Client {
 	var client *http.Client
+	tr := &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConnsPerHost:   1,
+	}
+	if cfg.Net.Tls != nil {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	client = &http.Client{Transport: tr}
+	return client
+}
+
+func SendHttpReqWithClien(client *http.Client, cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
 	schema := "http"
 	if cfg.Net.Tls != nil {
-		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		client = &http.Client{Transport: tr}
 		schema = "https"
-	} else {
-		client = &http.Client{}
 	}
 
 	if cfg.Server && !strings.Contains(addr, ":") {
@@ -66,4 +78,9 @@ func SendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rsp
 		rspBody, err = ioutil.ReadAll(resp.Body)
 	}
 	return
+}
+
+func SendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
+	client := CreateHttpClient(cfg)
+	return SendHttpReqWithClien(client, cfg, method, addr, urlpath, reqBody)
 }
