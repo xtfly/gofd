@@ -14,7 +14,7 @@ auth:
     passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc=
     factor: 9427e80d
     crc: 63F7
-contorl:
-    speed: 10  # unit is MB
+control:
+    speed: 20  # unit is MB
     cacheSize: 50 # unit is MB
     maxActive: 10

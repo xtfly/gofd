@@ -33,8 +33,12 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 	log.Infof("[%s] Recv task, file=%v, ips=%v", t.Id, t.DispatchFiles, t.DestIPs)
 
 	cti := NewCachedTaskInfo(s, t)
-	// 存在缓存中的不是指针对象，每次取出修改，需要更新，这主要是解决多个Goroutine访问的Race问题
 	s.cache.Set(t.Id, cti, gokits.NoExpiration)
+	s.cache.OnEvicted(func(id string, v interface{}) {
+		log.Infof("[%s] Remove task cache", t.Id)
+		cti := v.(*CachedTaskInfo)
+		cti.quitChan <- struct{}{}
+	})
 	go cti.Start()
 
 	return c.String(http.StatusAccepted, "")

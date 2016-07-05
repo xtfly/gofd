@@ -40,6 +40,7 @@ type CachedTaskInfo struct {
 	allCount  int
 
 	stopChan     chan struct{}
+	quitChan     chan struct{}
 	reportChan   chan *p2p.StatusReport
 	agentRspChan chan *clientRsp
 	cmpChan      chan *cmpTask
@@ -55,6 +56,7 @@ func NewCachedTaskInfo(s *Server, t *p2p.Task) *CachedTaskInfo {
 		ti:            newTaskInfo(t),
 
 		stopChan:     make(chan struct{}),
+		quitChan:     make(chan struct{}),
 		reportChan:   make(chan *p2p.StatusReport, 10),
 		agentRspChan: make(chan *clientRsp, 10),
 		cmpChan:      make(chan *cmpTask, 2),
@@ -100,15 +102,16 @@ func createLinkChain(cfg *common.Config, ips []string, ti *p2p.TaskInfo) *p2p.Li
 func (ct *CachedTaskInfo) Start() {
 	if ts := ct.createTask(); ts != p2p.TaskStatus_InProgress {
 		ct.endTask(ts)
-		return
 	}
 
 	for {
 		select {
+		case <-ct.quitChan:
+			log.Infof("[%s] Quit task goroutine", ct.id)
+			return
 		case <-ct.stopChan:
 			ct.endTask(p2p.TaskStatus_Failed)
 			ct.stopAllClientTask()
-			return
 		case c := <-ct.cmpChan:
 			// 内容不相同
 			if !equalSlice(c.t.DestIPs, ct.destIPs) || !equalSlice(c.t.DispatchFiles, ct.dispatchFiles) {
@@ -121,7 +124,6 @@ func (ct *CachedTaskInfo) Start() {
 				log.Infof("[%s] Task status is FAILED, will start task try again", ct.id)
 				if ts := ct.createTask(); ts != p2p.TaskStatus_InProgress {
 					ct.endTask(ts)
-					return
 				}
 			}
 		case q := <-ct.queryChan:
@@ -131,7 +133,6 @@ func (ct *CachedTaskInfo) Start() {
 			if ts, ok := checkFinished(ct.ti); ok {
 				ct.endTask(ts)
 				ct.stopAllClientTask()
-				return
 			}
 		}
 	}
@@ -171,6 +172,8 @@ func (ct *CachedTaskInfo) createTask() p2p.TaskStatus {
 	log.Debugf("[%s] Create dispatch task, task=%v", ct.id, string(dtbytes))
 
 	ct.allCount = len(ct.destIPs)
+	ct.succCount, ct.failCount = 0, 0
+	ct.ti.Status = p2p.TaskStatus_InProgress.String()
 	// 提交到session管理中运行
 	ct.s.sessionMgnt.CreateTask(dt)
 	// 给各节点发送创建分发任务的Rest消息

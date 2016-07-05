@@ -61,7 +61,7 @@ auth:
     passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= #管理端口与数据端口用于认证的密码
     factor: 9427e80d # passwd加密密钥因子
     crc: 63F7  # passwd加密密钥因子的校验码
-contorl:
+control:
     speed: 10  # 流量控制，单位为MBps
     cacheSize: 50 # 文件下载的内存缓存大小，单位为MB
     maxActive: 10 # 并发的任务数
@@ -85,7 +85,7 @@ auth:
     passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= 
     factor: 9427e80d
     crc: 63F7
-contorl:
+control:
     cacheSize: 50 # unit is MB
     maxActive: 10
 ```
@@ -119,7 +119,7 @@ contorl:
 
  * 创建分发任务
 
-        curl  -l --insecure --basic -u "gofd:gofd" -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/2.pic_hd.jpg"],"destIPs":["127.0.0.1"]}' https://127.0.0.1:45000/api/v1/server/tasks
+        curl  -l --insecure --basic -u "gofd:gofd" -H "Content-type: application/json" -X POST -d '{"id":"1","dispatchFiles":["/Users/xiao/archlinux.tar.gz"],"destIPs":["127.0.0.1"]}' https://127.0.0.1:45000/api/v1/server/tasks
 
  * 查询分发任务
 

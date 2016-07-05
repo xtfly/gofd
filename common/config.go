@@ -90,7 +90,7 @@ func (c *Config) defaultValue() {
 	}
 
 	if c.Control.Speed == 0 {
-		c.Control.Speed = 10
+		c.Control.Speed = 20
 	}
 	if c.Control.MaxActive == 0 {
 		c.Control.MaxActive = 5

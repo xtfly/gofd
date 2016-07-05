@@ -1,6 +1,9 @@
 package p2p
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 func checkEqual(ref, current []byte) bool {
 	for i := 0; i < len(current); i++ {
@@ -46,4 +49,16 @@ func readNBOUint32(r io.Reader) (n uint32, err error) {
 	}
 	n = bytesToUint32(buf[0:])
 	return
+}
+
+func humanSize(value float64) string {
+	switch {
+	case value > 1<<30:
+		return fmt.Sprintf("%.2f GB", value/(1<<30))
+	case value > 1<<20:
+		return fmt.Sprintf("%.2f MB", value/(1<<20))
+	case value > 1<<10:
+		return fmt.Sprintf("%.2f kB", value/(1<<10))
+	}
+	return fmt.Sprintf("%.2f B", value)
 }

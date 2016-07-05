@@ -31,6 +31,7 @@ type P2pSession struct {
 	totalSize       int64   // 所有文件大小
 	lastPieceLength int     // 最一块Piece的长度
 	goodPieces      int     // 已下载的Piece个数
+	downloaded      uint64
 
 	// 正在下载的Piece
 	activePieces map[int]*ActivePiece
@@ -463,6 +464,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	}
 
 	v.recordBlock(int(block))
+	s.downloaded += uint64(length)
 	if !v.isComplete() {
 		return
 	}
@@ -683,6 +685,9 @@ func (s *P2pSession) Init() {
 	}
 
 	keepAliveChan := time.Tick(60 * time.Second)
+	tickDuration := 1 * time.Second
+	tickChan := time.Tick(tickDuration)
+	lastDownloaded := s.downloaded
 
 	for {
 		select {
@@ -709,6 +714,12 @@ func (s *P2pSession) Init() {
 				log.Info("[", s.taskId, "] P2p session is timeout")
 			}
 			s.peersKeepAlive()
+		case <-tickChan:
+			if !s.g.cfg.Server {
+				speed := humanSize(float64(s.downloaded-lastDownloaded) / tickDuration.Seconds())
+				lastDownloaded = s.downloaded
+				log.Infof("[%s] downloaded: %d (%s/s)  pieces: %d/%d", s.taskId, s.downloaded, speed, s.goodPieces, s.totalPieces)
+			}
 		case <-s.retryConnTimeChan:
 			s.tryNewPeer()
 		case <-s.quitChan:
