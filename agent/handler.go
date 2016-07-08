@@ -42,7 +42,7 @@ func (svc *Agent) StartTask(c echo.Context) (err error) {
 // DELETE /api/v1/agent/tasks/:id
 func (svc *Agent) CancelTask(c echo.Context) error {
 	id := c.Param("id")
-	log.Infof("[%s] Recv cancel ask request", id)
+	log.Infof("[%s] Recv cancel task request", id)
 	svc.sessionMgnt.StopTask(id)
 	return nil
 }

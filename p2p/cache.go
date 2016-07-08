@@ -3,7 +3,6 @@ package p2p
 import (
 	"math"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -131,22 +130,15 @@ type RamCache struct {
 	torrentLength int64
 	cacheProvider *RamCacheProvider
 	infohash      string
-
-	mu sync.RWMutex // 增加锁，支持多Goroutine操作
 }
 
 func (r *RamCache) Close() {
-	r.mu.Lock()
 	r.cacheProvider.cacheClosed(r.infohash)
 	//We don't need to do anything else. The garbage collector will take care of it.
-	r.mu.Unlock()
 }
 
 func (r *RamCache) ReadAt(p []byte, off int64) []chunk {
 	unfulfilled := make([]chunk, 0)
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 
 	boxI := int(off / int64(r.pieceSize))
 	boxOff := int(off % int64(r.pieceSize))
@@ -199,9 +191,6 @@ func (r *RamCache) ReadAt(p []byte, off int64) []chunk {
 }
 
 func (r *RamCache) WriteAt(p []byte, off int64) []chunk {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	boxI := int(off / int64(r.pieceSize))
 	boxOff := int(off % int64(r.pieceSize))
 
@@ -233,13 +222,11 @@ func (r *RamCache) WriteAt(p []byte, off int64) []chunk {
 }
 
 func (r *RamCache) MarkCommitted(piece int) {
-	r.mu.Lock()
 	if r.store[piece] != nil {
 		r.isBoxFull.Set(piece)
 		r.isBoxCommit.Set(piece)
 		r.isByteSet[piece] = *NewBitset(0)
 	}
-	r.mu.Unlock()
 }
 
 func (r *RamCache) removeBox(boxI int) {

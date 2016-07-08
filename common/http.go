@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -28,13 +27,10 @@ func (s *BaseService) HttpDelete(addr, urlpath string) (err error) {
 func CreateHttpClient(cfg *Config) *http.Client {
 	var client *http.Client
 	tr := &http.Transport{
-		Dial: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).Dial,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		MaxIdleConnsPerHost:   1,
+		DisableKeepAlives:     true,
 	}
 	if cfg.Net.Tls != nil {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}

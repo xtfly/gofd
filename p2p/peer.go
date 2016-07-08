@@ -63,7 +63,7 @@ func NewPeer(c *P2pConn, speed int64) *peer {
 }
 
 func (p *peer) Close() {
-	log.Info("[", p.taskId, "] Closing connection to", p.address)
+	log.Infof("[%s] Closing connection to %s", p.taskId, p.address)
 	p.conn.Close()
 	//close(p.writeChan)
 }
@@ -72,7 +72,7 @@ func (p *peer) sendMessage(b []byte) {
 	p.writeChan <- b
 }
 
-func (p *peer) keepAlive(now time.Time) {
+func (p *peer) keepAlive() {
 	p.sendMessage([]byte{})
 }
 
@@ -149,7 +149,7 @@ func (p *peer) SendBitfield(bs *Bitset) {
 	msg := make([]byte, len(bs.Bytes())+1)
 	msg[0] = BITFIELD
 	copy(msg[1:], bs.Bytes())
-	log.Debugf("[%s] send BITFIELD to peer[%s]", p.taskId, p.address)
+	log.Tracef("[%s] send BITFIELD to peer[%s]", p.taskId, p.address)
 	p.sendMessage(msg)
 }
 
@@ -157,7 +157,7 @@ func (p *peer) SendHave(piece uint32) {
 	haveMsg := make([]byte, 5)
 	haveMsg[0] = HAVE
 	uint32ToBytes(haveMsg[1:5], piece)
-	log.Debugf("[%s] send HAVE to peer[%s], piece=%v", p.taskId, p.address, piece)
+	log.Tracef("[%s] send HAVE to peer[%s], piece=%v", p.taskId, p.address, piece)
 	p.sendMessage(haveMsg)
 }
 
@@ -170,7 +170,7 @@ func (p *peer) SendRequest(piece, begin, length int) {
 	requestIndex := (uint64(piece) << 32) | uint64(begin)
 
 	p.ourRequests[requestIndex] = time.Now()
-	log.Debugf("[%s] send REQUEST to peer[%s], piece=%v, begin=%v, length=%v",
+	log.Tracef("[%s] send REQUEST to peer[%s], piece=%v, begin=%v, length=%v",
 		p.taskId, p.address, piece, begin, length)
 	p.sendMessage(req)
 }

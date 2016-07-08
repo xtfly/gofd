@@ -6,9 +6,11 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"path/filepath"
 	"time"
 
 	log "github.com/cihub/seelog"
+	"github.com/xtfly/gokits"
 )
 
 const (
@@ -32,6 +34,7 @@ type P2pSession struct {
 	lastPieceLength int     // 最一块Piece的长度
 	goodPieces      int     // 已下载的Piece个数
 	downloaded      uint64
+	checkPieceTime  float64
 
 	// 正在下载的Piece
 	activePieces map[int]*ActivePiece
@@ -121,8 +124,10 @@ func (s *P2pSession) initInServer() error {
 
 func (s *P2pSession) initInClient() error {
 	// 客户端与服务端的下载路径不同，修改路径
+	exsited := false
 	for idx, _ := range s.task.MetaInfo.Files {
 		s.task.MetaInfo.Files[idx].Path = s.g.cfg.DownDir
+		exsited = gokits.FileExist(filepath.Join(s.g.cfg.DownDir, s.task.MetaInfo.Files[idx].Name))
 	}
 
 	if err := s.init(); err != nil {
@@ -130,16 +135,20 @@ func (s *P2pSession) initInClient() error {
 	}
 
 	//计算已经下载的块信息
-	{
+	if exsited {
 		var err error
 		start := time.Now()
 		s.goodPieces, _, s.pieceSet, err = checkPieces(s.fileStore, s.totalSize, s.task.MetaInfo)
 		end := time.Now()
+		s.checkPieceTime += end.Sub(start).Seconds()
 		log.Infof("[%s] Computed missing pieces: total(%v), good(%v) (%.2f seconds)", s.taskId,
-			s.totalPieces, s.goodPieces, end.Sub(start).Seconds())
+			s.totalPieces, s.goodPieces, s.checkPieceTime)
 		if err != nil {
 			return err
 		}
+	} else {
+		s.pieceSet = NewBitset(s.totalPieces)
+		s.goodPieces = 0
 	}
 
 	log.Infof("[%s] Inited p2p client session", s.taskId)
@@ -346,37 +355,38 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 
 	switch messageID {
 	case HAVE: // 处理Peer发送过来的HAVE消息
-		log.Debugf("[%s] Recv HAVE from peer[%s] ", p.taskId, p.address)
+		log.Tracef("[%s] Recv HAVE from peer[%s] ", p.taskId, p.address)
 		if len(message) != 5 {
 			return errors.New("Unexpected length")
 		}
 		n := bytesToUint32(message[1:])
-		if n < uint32(p.have.n) {
-			p.have.Set(int(n))
-			s.RequestBlock(p) // 向请此Peer上请求发送块
-		} else {
+		if n >= uint32(p.have.n) {
 			return errors.New("have index is out of range")
 		}
-	case BITFIELD: // 处理Peer发送过来的BITFIELD消息
-		log.Debugf("[%s] Recv BITFIELD from peer[%s] isclient=%v", p.taskId, p.address, p.client)
-		p.have = NewBitsetFromBytes(s.totalPieces, message[1:])
-		if p.have != nil {
-			if !p.client {
-				s.RequestBlock(p) // 向Server Peer请求发送块
+		p.have.Set(int(n))
+		if !p.client {
+			for i := 0; i < MAX_OUR_REQUESTS; i++ {
+				s.RequestBlock(p) // 向请此Peer上请求发送块
 			}
-		} else {
+		}
+	case BITFIELD: // 处理Peer发送过来的BITFIELD消息
+		log.Tracef("[%s] Recv BITFIELD from peer[%s] isclient=%v", p.taskId, p.address, p.client)
+		p.have = NewBitsetFromBytes(s.totalPieces, message[1:])
+		if p.have == nil {
 			return errors.New("Invalid bitfield data")
 		}
+		if !p.client {
+			s.RequestBlock(p) // 向Server Peer请求发送块
+		}
 	case REQUEST: // 处理Peer发送过来的REQUEST消息
-		log.Debugf("[%s] Recv REQUEST from peer[%s] ", p.taskId, p.address)
+		log.Tracef("[%s] Recv REQUEST from peer[%s] ", p.taskId, p.address)
 		index, begin, length, err := s.decodeRequest(message, p)
 		if err != nil {
 			return err
 		}
-		// 注意 go sendPiece不要操作Sesion的成员变量，否则可能产生Race问题
-		go s.sendPiece(p, index, begin, length)
+		return s.sendPiece(p, index, begin, length)
 	case PIECE: // 处理Peer发送过来的PIECE消息
-		log.Debugf("[%s] Recv PIECE from peer[%s]", p.taskId, p.address)
+		log.Tracef("[%s] Recv PIECE from peer[%s]", p.taskId, p.address)
 		index, begin, length, err := s.decodePiece(message, p)
 		if err != nil {
 			return err
@@ -472,7 +482,9 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	// Piece完成下载，清理资源，提交文件
 	delete(s.activePieces, int(piece))
 	var pieceBytes []byte
+	start := time.Now()
 	ok, err, pieceBytes = checkPiece(s.fileStore, s.totalSize, s.task.MetaInfo, int(piece))
+	s.checkPieceTime += time.Now().Sub(start).Seconds()
 	if !ok || err != nil {
 		log.Errorf("[%s] Closing peer[%s] that sent a bad piece=%v, error=%v", s.taskId, p.address, piece, err)
 		go s.reportStatus(float32(-1))
@@ -497,15 +509,15 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	} else {
 		// 减少上报次数，减轻Server的压力
 		if int(percentComplete) > s.reportStep {
-			s.reportStep += 5
+			s.reportStep += 10
 			go s.reportStatus(percentComplete)
 		}
 	}
 
 	// 每当客户端下载了一个piece，即将该piece的下标作为have消息的负载构造have消息，
-	// 并把该消息发送给所有建立连接的Client Peer。
+	// 并把该消息发送给所有建立连接的Peer。
 	for _, p := range s.peers {
-		if p.have != nil && p.client &&
+		if p.have != nil &&
 			(int(piece) >= p.have.n || !p.have.IsSet(int(piece))) {
 			p.SendHave(piece)
 		}
@@ -596,9 +608,7 @@ func (s *P2pSession) RequestBlock(p *peer) (err error) {
 		return
 	}
 
-	pieceLength := s.pieceLength(piece)
-	pieceCount := (pieceLength + STANDARD_BLOCK_LENGTH - 1) / STANDARD_BLOCK_LENGTH
-	s.activePieces[piece] = &ActivePiece{make([]int, pieceCount), pieceLength}
+	s.activePieces[piece] = NewActivePiece(s.pieceLength(piece))
 	return s.requestBlock2(p, piece, false)
 
 }
@@ -626,7 +636,7 @@ func (s *P2pSession) requestBlockImp(p *peer, piece int, block int) {
 		}
 	}
 
-	log.Debugf("[%s] Requesting block from peer[%s], piece=%v.%v, length=%v", s.taskId, p.address, piece, block, length)
+	//log.Tracef("[%s] Requesting block from peer[%s], piece=%v.%v, length=%v", s.taskId, p.address, piece, block, length)
 	p.SendRequest(piece, begin, length)
 	return
 }
@@ -685,7 +695,7 @@ func (s *P2pSession) Init() {
 	}
 
 	keepAliveChan := time.Tick(60 * time.Second)
-	tickDuration := 1 * time.Second
+	tickDuration := 2 * time.Second
 	tickChan := time.Tick(tickDuration)
 	lastDownloaded := s.downloaded
 
@@ -718,7 +728,8 @@ func (s *P2pSession) Init() {
 			if !s.g.cfg.Server {
 				speed := humanSize(float64(s.downloaded-lastDownloaded) / tickDuration.Seconds())
 				lastDownloaded = s.downloaded
-				log.Infof("[%s] downloaded: %d (%s/s)  pieces: %d/%d", s.taskId, s.downloaded, speed, s.goodPieces, s.totalPieces)
+				log.Infof("[%s] downloaded:%d(%s/s),pieces:%d/%d,check pieces:(%.2f seconds)",
+					s.taskId, s.downloaded, speed, s.goodPieces, s.totalPieces, s.checkPieceTime)
 			}
 		case <-s.retryConnTimeChan:
 			s.tryNewPeer()
@@ -759,7 +770,7 @@ func (s *P2pSession) peersKeepAlive() {
 			s.ClosePeer(peer)
 			continue
 		}
-		peer.keepAlive(now)
+		peer.keepAlive()
 	}
 }
 

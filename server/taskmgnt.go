@@ -150,7 +150,7 @@ func (ct *CachedTaskInfo) endTask(ts p2p.TaskStatus) {
 func (ct *CachedTaskInfo) createTask() p2p.TaskStatus {
 	// 先产生任务元数据信息
 	start := time.Now()
-	mi, err := p2p.CreateFileMeta(ct.dispatchFiles, 256*1024)
+	mi, err := p2p.CreateFileMeta(ct.dispatchFiles, 1024*1024)
 	end := time.Now()
 	if err != nil {
 		log.Errorf("[%s] Create file meta failed, error=%v", ct.id, err)

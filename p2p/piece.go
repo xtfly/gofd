@@ -9,7 +9,7 @@ import (
 
 const (
 	// 每个Piece分成多个Block，每次下载块的大小
-	STANDARD_BLOCK_LENGTH = 16 * 1024
+	STANDARD_BLOCK_LENGTH = 32 * 1024
 
 	// 最大块的长度
 	MAX_BLOCK_LENGTH = 128 * 1024
@@ -147,6 +147,11 @@ func checkPiece(fs FileStore, totalLength int64, m *MetaInfo, pieceIndex int) (g
 type ActivePiece struct {
 	downloaderCount []int // -1 means piece is already downloaded
 	pieceLength     int
+}
+
+func NewActivePiece(pieceLength int) *ActivePiece {
+	pieceCount := (pieceLength + STANDARD_BLOCK_LENGTH - 1) / STANDARD_BLOCK_LENGTH
+	return &ActivePiece{make([]int, pieceCount), pieceLength}
 }
 
 func (a *ActivePiece) chooseBlockToDownload(endgame bool) (index int) {

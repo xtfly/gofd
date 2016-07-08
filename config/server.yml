@@ -15,6 +15,6 @@ auth:
     factor: 9427e80d
     crc: 63F7
 control:
-    speed: 20  # unit is MB
+    speed: 50  # unit is MB
     cacheSize: 50 # unit is MB
     maxActive: 10
