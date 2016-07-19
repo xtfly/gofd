@@ -89,11 +89,11 @@ func (p *peer) peerWriter(errorChan chan peerMessage) {
 			if now.Sub(lastWriteTime) < 2*time.Minute {
 				continue
 			}
-			log.Debugf("[%s] Sending keep alive to peer[%s]", p.taskId, p.address)
+			log.Tracef("[%s] Sending keep alive to peer[%s]", p.taskId, p.address)
 		}
 		lastWriteTime = now
 
-		log.Debugf("[%s] Sending message to peer[%s], length=%v", p.taskId, p.address, uint32(len(msg)))
+		//log.Debugf("[%s] Sending message to peer[%s], length=%v", p.taskId, p.address, uint32(len(msg)))
 		err := writeNBOUint32(p.flowctrlWriter, uint32(len(msg)))
 		if err != nil {
 			log.Error(err)

@@ -33,8 +33,8 @@ type P2pSession struct {
 	totalSize       int64   // 所有文件大小
 	lastPieceLength int     // 最一块Piece的长度
 	goodPieces      int     // 已下载的Piece个数
-	downloaded      uint64
-	checkPieceTime  float64
+	downloaded      uint64  // 已下载的字节数
+	checkPieceTime  float64 // 检查Piece所花费的时间累计
 
 	// 正在下载的Piece
 	activePieces map[int]*ActivePiece

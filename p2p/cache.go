@@ -3,6 +3,7 @@ package p2p
 import (
 	"math"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -44,10 +45,11 @@ func (a byTime) Less(i, j int) bool { return a[i].atime.Before(a[j].atime) }
 type RamCacheProvider struct {
 	capacity int
 	caches   map[string]*RamCache
+	m        *sync.Mutex
 }
 
 func NewRamCacheProvider(capacity int) CacheProvider {
-	rc := &RamCacheProvider{capacity, make(map[string]*RamCache)}
+	rc := &RamCacheProvider{capacity, make(map[string]*RamCache), new(sync.Mutex)}
 	return rc
 }
 
@@ -65,8 +67,10 @@ func (r *RamCacheProvider) NewCache(infohash string, numPieces int, pieceSize in
 		capacity:      &i,
 		infohash:      infohash}
 
+	r.m.Lock()
 	r.caches[infohash] = rc
 	r.rebalance(true)
+	r.m.Unlock()
 	return rc
 }
 
@@ -103,8 +107,10 @@ func (r *RamCacheProvider) rebalance(shouldTrim bool) {
 }
 
 func (r *RamCacheProvider) cacheClosed(infohash string) {
+	r.m.Lock()
 	delete(r.caches, infohash)
 	r.rebalance(false)
+	r.m.Unlock()
 }
 
 //'pieceSize' is the size of the average piece
@@ -130,6 +136,7 @@ type RamCache struct {
 	torrentLength int64
 	cacheProvider *RamCacheProvider
 	infohash      string
+	m             sync.RWMutex
 }
 
 func (r *RamCache) Close() {
@@ -138,6 +145,8 @@ func (r *RamCache) Close() {
 }
 
 func (r *RamCache) ReadAt(p []byte, off int64) []chunk {
+	r.m.RLock()
+	defer r.m.RUnlock()
 	unfulfilled := make([]chunk, 0)
 
 	boxI := int(off / int64(r.pieceSize))
@@ -191,6 +200,8 @@ func (r *RamCache) ReadAt(p []byte, off int64) []chunk {
 }
 
 func (r *RamCache) WriteAt(p []byte, off int64) []chunk {
+	r.m.Lock()
+	defer r.m.Unlock()
 	boxI := int(off / int64(r.pieceSize))
 	boxOff := int(off % int64(r.pieceSize))
 
@@ -222,6 +233,8 @@ func (r *RamCache) WriteAt(p []byte, off int64) []chunk {
 }
 
 func (r *RamCache) MarkCommitted(piece int) {
+	r.m.Lock()
+	defer r.m.Unlock()
 	if r.store[piece] != nil {
 		r.isBoxFull.Set(piece)
 		r.isBoxCommit.Set(piece)
@@ -248,6 +261,8 @@ func (r *RamCache) setCapacity(capacity int) {
 //Trim stuff that's already been committed
 //Return true if we got underneath capacity, false if not.
 func (r *RamCache) trimCommitted() bool {
+	r.m.Lock()
+	defer r.m.Unlock()
 	for i := 0; i < r.isBoxCommit.Len(); i++ {
 		if r.isBoxCommit.IsSet(i) {
 			r.removeBox(i)
@@ -261,7 +276,6 @@ func (r *RamCache) trimCommitted() bool {
 
 //Trim excess data. Returns any uncommitted chunks that were trimmed
 func (r *RamCache) trim() []chunk {
-
 	if r.trimCommitted() {
 		return nil
 	}
