@@ -13,7 +13,7 @@ import (
 // POST /api/v1/server/tasks
 func (s *Server) CreateTask(c echo.Context) (err error) {
 	//  获取Body
-	t := new(p2p.Task)
+	t := new(CreateTask)
 	if err = c.Bind(t); err != nil {
 		log.Errorf("Recv [%s] request, decode body failed. %v", c.Request().URL(), err)
 		return
@@ -26,7 +26,7 @@ func (s *Server) CreateTask(c echo.Context) (err error) {
 			return c.String(http.StatusAccepted, "")
 		} else {
 			log.Debugf("[%s] Recv task, task is existed", t.Id)
-			return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskExist.String())
+			return c.String(http.StatusBadRequest, TaskStatus_TaskExist.String())
 		}
 	}
 
@@ -50,7 +50,7 @@ func (s *Server) CancelTask(c echo.Context) error {
 	id := c.Param("id")
 	log.Infof("[%s] Recv cancel task", id)
 	if v, ok := s.cache.Get(id); !ok {
-		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
+		return c.String(http.StatusBadRequest, TaskStatus_TaskNotExist.String())
 	} else {
 		cti := v.(*CachedTaskInfo)
 		cti.stopChan <- struct{}{}
@@ -64,7 +64,7 @@ func (s *Server) QueryTask(c echo.Context) error {
 	id := c.Param("id")
 	log.Infof("[%s] Recv query task", id)
 	if v, ok := s.cache.Get(id); !ok {
-		return c.String(http.StatusBadRequest, p2p.TaskStatus_TaskNotExist.String())
+		return c.String(http.StatusBadRequest, TaskStatus_TaskNotExist.String())
 	} else {
 		cti := v.(*CachedTaskInfo)
 		return c.JSON(http.StatusOK, cti.Query())

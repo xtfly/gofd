@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"fmt"
 	"io"
@@ -11,30 +10,13 @@ import (
 	log "github.com/cihub/seelog"
 )
 
-type MetaInfoFileSystem interface {
-	Open(name string) (MetaInfoFile, error)
-	Stat(name string) (os.FileInfo, error)
+// FileSystem接口适配
+type fileSystemAdapter struct {
 }
 
-type MetaInfoFile interface {
-	io.Closer
-	io.Reader
-	io.ReaderAt
-	Readdirnames(n int) (names []string, err error)
-	Stat() (os.FileInfo, error)
-}
-
-// Adapt a MetaInfoFileSystem into a file store FileSystem
-type FileStoreFileSystemAdapter struct {
-}
-
-type FileStoreFileAdapter struct {
-	f MetaInfoFile
-}
-
-func (f *FileStoreFileSystemAdapter) Open(name []string, length int64) (file File, err error) {
-	var ff MetaInfoFile
-	ff, err = os.Open(path.Join(name...))
+func (f *fileSystemAdapter) Open(name []string, length int64) (file File, err error) {
+	var ff *os.File
+	ff, err = os.Open(path.Clean(path.Join(name...)))
 	if err != nil {
 		return
 	}
@@ -47,33 +29,12 @@ func (f *FileStoreFileSystemAdapter) Open(name []string, length int64) (file Fil
 		err = fmt.Errorf("Unexpected file size %v. Expected %v", actualSize, length)
 		return
 	}
-	file = &FileStoreFileAdapter{ff}
+	file = ff
 	return
 }
 
-func (f *FileStoreFileSystemAdapter) Close() error {
+func (f *fileSystemAdapter) Close() error {
 	return nil
-}
-
-func (f *FileStoreFileAdapter) ReadAt(p []byte, off int64) (n int, err error) {
-	return f.f.ReadAt(p, off)
-}
-
-func (f *FileStoreFileAdapter) WriteAt(p []byte, off int64) (n int, err error) {
-	// Writes must match existing data exactly.
-	q := make([]byte, len(p))
-	_, err = f.ReadAt(q, off)
-	if err != nil {
-		return
-	}
-	if bytes.Compare(p, q) != 0 {
-		err = fmt.Errorf("New data does not match original data.")
-	}
-	return
-}
-
-func (f *FileStoreFileAdapter) Close() (err error) {
-	return f.f.Close()
 }
 
 func (m *MetaInfo) addFiles(fileInfo os.FileInfo, file string, idx int) (err error) {
@@ -114,13 +75,11 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 	}
 	mi.PieceLen = pieceLen
 
-	fileStoreFS := &FileStoreFileSystemAdapter{}
-	var fileStore FileStore
-	var fileStoreLength int64
-	fileStore, fileStoreLength, err = NewFileStore(mi, fileStoreFS)
+	fileStore, fileStoreLength, err := NewFileStore(mi, &fileSystemAdapter{})
 	if err != nil {
 		return nil, err
 	}
+	defer fileStore.Close()
 	if fileStoreLength != mi.Length {
 		return nil, fmt.Errorf("Filestore total length %v, expected %v", fileStoreLength, mi.Length)
 	}
@@ -136,7 +95,7 @@ func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 }
 
 func sha1Sum(file string) (sum string, err error) {
-	var f MetaInfoFile
+	var f *os.File
 	f, err = os.Open(file)
 	if err != nil {
 		log.Errorf("Open file failed, file=%s, error=%v", file, err)

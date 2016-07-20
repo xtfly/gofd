@@ -63,23 +63,6 @@ func (b *Bitset) checkRange(index int) {
 	}
 }
 
-func (b *Bitset) AndNot(b2 *Bitset) {
-	if b.n != b2.n {
-		log.Errorf("Unequal bitset sizes %d != %d", b.n, b2.n)
-		return
-	}
-	for i := 0; i < len(b.b); i++ {
-		b.b[i] = b.b[i] & ^b2.b[i]
-	}
-	b.clearEnd()
-}
-
-func (b *Bitset) clearEnd() {
-	if b.endIndex >= 0 {
-		b.b[b.endIndex] &= b.endMask
-	}
-}
-
 func (b *Bitset) IsEndValid() bool {
 	if b.endIndex >= 0 {
 		return (b.b[b.endIndex] & b.endMask) == 0

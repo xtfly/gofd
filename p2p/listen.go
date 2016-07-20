@@ -45,7 +45,7 @@ func StartListen(cfg *common.Config) (conChan chan *P2pConn, listener net.Listen
 					if max := 1 * time.Second; tempDelay > max {
 						tempDelay = max
 					}
-					log.Infof("http: Accept error: %v; retrying in %v", e, tempDelay)
+					log.Infof("Accept error: %v; retrying in %v", e, tempDelay)
 					time.Sleep(tempDelay)
 					continue
 				}

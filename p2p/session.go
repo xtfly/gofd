@@ -725,10 +725,10 @@ func (s *P2pSession) Init() {
 			}
 			s.peersKeepAlive()
 		case <-tickChan:
-			if !s.g.cfg.Server {
+			if !s.g.cfg.Server && s.totalPieces != s.goodPieces {
 				speed := humanSize(float64(s.downloaded-lastDownloaded) / tickDuration.Seconds())
 				lastDownloaded = s.downloaded
-				log.Infof("[%s] downloaded:%d(%s/s),pieces:%d/%d,check pieces:(%.2f seconds)",
+				log.Infof("[%s] downloaded: %d(%s/s), pieces: %d/%d, check pieces: (%.2f seconds)",
 					s.taskId, s.downloaded, speed, s.goodPieces, s.totalPieces, s.checkPieceTime)
 			}
 		case <-s.retryConnTimeChan:

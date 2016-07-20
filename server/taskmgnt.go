@@ -18,12 +18,12 @@ type clientRsp struct {
 }
 
 type cmpTask struct {
-	t   *p2p.Task
+	t   *CreateTask
 	out chan bool
 }
 
 type queryTask struct {
-	out chan *p2p.TaskInfo
+	out chan *TaskInfo
 }
 
 // 每一个Task，对应一个缓存对象，所有与它关联的操作都由一个Goroutine来处理
@@ -33,7 +33,7 @@ type CachedTaskInfo struct {
 	id            string
 	dispatchFiles []string
 	destIPs       []string
-	ti            *p2p.TaskInfo
+	ti            *TaskInfo
 
 	succCount int
 	failCount int
@@ -47,7 +47,7 @@ type CachedTaskInfo struct {
 	queryChan    chan *queryTask
 }
 
-func NewCachedTaskInfo(s *Server, t *p2p.Task) *CachedTaskInfo {
+func NewCachedTaskInfo(s *Server, t *CreateTask) *CachedTaskInfo {
 	return &CachedTaskInfo{
 		s:             s,
 		id:            t.Id,
@@ -64,22 +64,22 @@ func NewCachedTaskInfo(s *Server, t *p2p.Task) *CachedTaskInfo {
 	}
 }
 
-func newTaskInfo(t *p2p.Task) *p2p.TaskInfo {
-	init := p2p.TaskStatus_Init.String()
-	ti := &p2p.TaskInfo{Id: t.Id, Status: init, StartedAt: time.Now()}
-	ti.DispatchInfos = make(map[string]*p2p.DispatchInfo, len(t.DestIPs))
+func newTaskInfo(t *CreateTask) *TaskInfo {
+	init := TaskStatus_Init.String()
+	ti := &TaskInfo{Id: t.Id, Status: init, StartedAt: time.Now()}
+	ti.DispatchInfos = make(map[string]*DispatchInfo, len(t.DestIPs))
 	for _, ip := range t.DestIPs {
-		di := &p2p.DispatchInfo{Status: init, StartedAt: time.Now()}
-		di.DispatchFiles = make([]*p2p.DispatchFile, len(t.DispatchFiles))
+		di := &DispatchInfo{Status: init, StartedAt: time.Now()}
+		di.DispatchFiles = make([]*DispatchFile, len(t.DispatchFiles))
 		ti.DispatchInfos[ip] = di
 		for j, fn := range t.DispatchFiles {
-			di.DispatchFiles[j] = &p2p.DispatchFile{FileName: fn}
+			di.DispatchFiles[j] = &DispatchFile{FileName: fn}
 		}
 	}
 	return ti
 }
 
-func createLinkChain(cfg *common.Config, ips []string, ti *p2p.TaskInfo) *p2p.LinkChain {
+func createLinkChain(cfg *common.Config, ips []string, ti *TaskInfo) *p2p.LinkChain {
 	lc := new(p2p.LinkChain)
 	lc.ServerAddr = fmt.Sprintf("%s:%v", cfg.Net.IP, cfg.Net.MgntPort)
 	lc.DispatchAddrs = make([]string, 1+len(ips))
@@ -88,7 +88,7 @@ func createLinkChain(cfg *common.Config, ips []string, ti *p2p.TaskInfo) *p2p.Li
 
 	idx := 1
 	for _, ip := range ips {
-		if di, ok := ti.DispatchInfos[ip]; ok && di.Status == p2p.TaskStatus_InProgress.String() {
+		if di, ok := ti.DispatchInfos[ip]; ok && di.Status == TaskStatus_InProgress.String() {
 			lc.DispatchAddrs[idx] = fmt.Sprintf("%s:%v", ip, cfg.Net.AgentDataPort)
 			idx++
 		}
@@ -100,7 +100,7 @@ func createLinkChain(cfg *common.Config, ips []string, ti *p2p.TaskInfo) *p2p.Li
 
 // 使用一个Goroutine来启动任务操作
 func (ct *CachedTaskInfo) Start() {
-	if ts := ct.createTask(); ts != p2p.TaskStatus_InProgress {
+	if ts := ct.createTask(); ts != TaskStatus_InProgress {
 		ct.endTask(ts)
 	}
 
@@ -110,7 +110,7 @@ func (ct *CachedTaskInfo) Start() {
 			log.Infof("[%s] Quit task goroutine", ct.id)
 			return
 		case <-ct.stopChan:
-			ct.endTask(p2p.TaskStatus_Failed)
+			ct.endTask(TaskStatus_Failed)
 			ct.stopAllClientTask()
 		case c := <-ct.cmpChan:
 			// 内容不相同
@@ -119,10 +119,10 @@ func (ct *CachedTaskInfo) Start() {
 			}
 			// 内容相同，如果失败了，则重新启动
 			c.out <- true
-			if ct.ti.Status == p2p.TaskStatus_Failed.String() {
+			if ct.ti.Status == TaskStatus_Failed.String() {
 				ct.s.cache.Replace(ct.id, ct, gokits.NoExpiration)
 				log.Infof("[%s] Task status is FAILED, will start task try again", ct.id)
-				if ts := ct.createTask(); ts != p2p.TaskStatus_InProgress {
+				if ts := ct.createTask(); ts != TaskStatus_InProgress {
 					ct.endTask(ts)
 				}
 			}
@@ -138,7 +138,7 @@ func (ct *CachedTaskInfo) Start() {
 	}
 }
 
-func (ct *CachedTaskInfo) endTask(ts p2p.TaskStatus) {
+func (ct *CachedTaskInfo) endTask(ts TaskStatus) {
 	log.Errorf("[%s] Task status changed, status=%v", ct.id, ts)
 	ct.ti.Status = ts.String()
 	ct.ti.FinishedAt = time.Now()
@@ -147,14 +147,14 @@ func (ct *CachedTaskInfo) endTask(ts p2p.TaskStatus) {
 	ct.s.sessionMgnt.StopTask(ct.id)
 }
 
-func (ct *CachedTaskInfo) createTask() p2p.TaskStatus {
+func (ct *CachedTaskInfo) createTask() TaskStatus {
 	// 先产生任务元数据信息
 	start := time.Now()
 	mi, err := p2p.CreateFileMeta(ct.dispatchFiles, 1024*1024)
 	end := time.Now()
 	if err != nil {
 		log.Errorf("[%s] Create file meta failed, error=%v", ct.id, err)
-		return p2p.TaskStatus_FileNotExist
+		return TaskStatus_FileNotExist
 	}
 	log.Infof("[%s] Create metainfo: (%.2f seconds)", ct.id, end.Sub(start).Seconds())
 
@@ -167,13 +167,13 @@ func (ct *CachedTaskInfo) createTask() p2p.TaskStatus {
 
 	dtbytes, err1 := json.Marshal(dt)
 	if err1 != nil {
-		return p2p.TaskStatus_Failed
+		return TaskStatus_Failed
 	}
 	log.Debugf("[%s] Create dispatch task, task=%v", ct.id, string(dtbytes))
 
 	ct.allCount = len(ct.destIPs)
 	ct.succCount, ct.failCount = 0, 0
-	ct.ti.Status = p2p.TaskStatus_InProgress.String()
+	ct.ti.Status = TaskStatus_InProgress.String()
 	// 提交到session管理中运行
 	ct.s.sessionMgnt.CreateTask(dt)
 	// 给各节点发送创建分发任务的Rest消息
@@ -184,19 +184,19 @@ func (ct *CachedTaskInfo) createTask() p2p.TaskStatus {
 		case tdr := <-ct.agentRspChan:
 			ct.checkAgentRsp(tdr)
 			if ct.failCount == ct.allCount {
-				return p2p.TaskStatus_Failed
+				return TaskStatus_Failed
 			}
 			if ct.succCount+ct.failCount == ct.allCount {
-				if ts := ct.startTask(); ts != p2p.TaskStatus_InProgress {
+				if ts := ct.startTask(); ts != TaskStatus_InProgress {
 					return ts
 				}
 				// 部分节点响应，则也继续
-				return p2p.TaskStatus_InProgress
+				return TaskStatus_InProgress
 			}
 		case <-time.After(5 * time.Second): // 等超时
 			if ct.succCount == 0 {
 				log.Errorf("[%s] Wait client response timeout.", ct.id)
-				return p2p.TaskStatus_Failed
+				return TaskStatus_Failed
 			}
 		}
 	}
@@ -206,24 +206,24 @@ func (ct *CachedTaskInfo) checkAgentRsp(tcr *clientRsp) {
 	if di, ok := ct.ti.DispatchInfos[tcr.IP]; ok {
 		di.StartedAt = time.Now()
 		if tcr.Success {
-			di.Status = p2p.TaskStatus_InProgress.String()
+			di.Status = TaskStatus_InProgress.String()
 			ct.succCount++
 		} else {
-			di.Status = p2p.TaskStatus_Failed.String()
+			di.Status = TaskStatus_Failed.String()
 			di.FinishedAt = time.Now()
 			ct.failCount++
 		}
 	}
 }
 
-func (ct *CachedTaskInfo) startTask() p2p.TaskStatus {
+func (ct *CachedTaskInfo) startTask() TaskStatus {
 	log.Infof("[%s] Recv all client response, will send start command to clients", ct.id)
 	st := &p2p.StartTask{TaskId: ct.id}
 	st.LinkChain = createLinkChain(ct.s.Cfg, ct.destIPs, ct.ti)
 
 	stbytes, err1 := json.Marshal(st)
 	if err1 != nil {
-		return p2p.TaskStatus_Failed
+		return TaskStatus_Failed
 	}
 	log.Debugf("[%s] Create start task, task=%v", ct.id, string(stbytes))
 
@@ -239,15 +239,15 @@ func (ct *CachedTaskInfo) startTask() p2p.TaskStatus {
 		case tdr := <-ct.agentRspChan:
 			ct.checkAgentRsp(tdr)
 			if ct.failCount == ct.allCount {
-				return p2p.TaskStatus_Failed
+				return TaskStatus_Failed
 			}
 			if ct.succCount+ct.failCount == ct.allCount {
-				return p2p.TaskStatus_InProgress
+				return TaskStatus_InProgress
 			}
 		case <-time.After(5 * time.Second): // 等超时
 			if ct.succCount == 0 {
 				log.Errorf("[%s] Wait client response timeout.", ct.id)
-				return p2p.TaskStatus_Failed
+				return TaskStatus_Failed
 			}
 		}
 	}
@@ -289,11 +289,11 @@ func (ct *CachedTaskInfo) stopAllClientTask() {
 func (ct *CachedTaskInfo) reportStatus(csr *p2p.StatusReport) {
 	if di, ok := ct.ti.DispatchInfos[csr.IP]; ok {
 		if int(csr.PercentComplete) == 100 {
-			di.Status = p2p.TaskStatus_Completed.String()
+			di.Status = TaskStatus_Completed.String()
 			di.FinishedAt = time.Now()
 			log.Infof("[%s] Recv report task status is completed, ip=%s", ct.id, csr.IP)
 		} else if int(csr.PercentComplete) == -1 {
-			di.Status = p2p.TaskStatus_Failed.String()
+			di.Status = TaskStatus_Failed.String()
 			di.FinishedAt = time.Now()
 			log.Infof("[%s] Recv report task status is failed, ip=%s", ct.id, csr.IP)
 		}
@@ -301,42 +301,42 @@ func (ct *CachedTaskInfo) reportStatus(csr *p2p.StatusReport) {
 	}
 }
 
-func (ct *CachedTaskInfo) Query() *p2p.TaskInfo {
-	qchan := make(chan *p2p.TaskInfo, 2)
+func (ct *CachedTaskInfo) Query() *TaskInfo {
+	qchan := make(chan *TaskInfo, 2)
 	ct.queryChan <- &queryTask{out: qchan}
 	defer close(qchan)
 	return <-qchan
 }
 
-func (ct *CachedTaskInfo) EqualCmp(t *p2p.Task) bool {
+func (ct *CachedTaskInfo) EqualCmp(t *CreateTask) bool {
 	cchan := make(chan bool, 2)
 	ct.cmpChan <- &cmpTask{t: t, out: cchan}
 	defer close(cchan)
 	return <-cchan
 }
 
-func checkFinished(ti *p2p.TaskInfo) (p2p.TaskStatus, bool) {
+func checkFinished(ti *TaskInfo) (TaskStatus, bool) {
 	completed := 0
 	failed := 0
 	for _, v := range ti.DispatchInfos {
-		if v.Status == p2p.TaskStatus_Completed.String() {
+		if v.Status == TaskStatus_Completed.String() {
 			completed++
 		}
-		if v.Status == p2p.TaskStatus_Failed.String() {
+		if v.Status == TaskStatus_Failed.String() {
 			failed++
 		}
 	}
 
 	count := len(ti.DispatchInfos)
 	if completed == count {
-		return p2p.TaskStatus_Completed, true
+		return TaskStatus_Completed, true
 	}
 
 	if completed+failed == count {
-		return p2p.TaskStatus_Completed, true
+		return TaskStatus_Completed, true
 	}
 
-	return p2p.TaskStatus_InProgress, false
+	return TaskStatus_InProgress, false
 }
 
 func equalSlice(a, b []string) bool {
