@@ -1,8 +1,10 @@
 package p2p
 
-import log "github.com/cihub/seelog"
+import (
+	"github.com/xtfly/gofd/common"
+)
 
-// As defined by the bittorrent protocol, this bitset is big-endian, such that
+// Bitset As defined by the bittorrent protocol, this bitset is big-endian, such that
 // the high bit of the first byte is block 0
 type Bitset struct {
 	b        []byte
@@ -11,6 +13,7 @@ type Bitset struct {
 	endMask  byte // Which bits of the last byte are valid
 }
 
+// NewBitset ...
 func NewBitset(n int) *Bitset {
 	endIndex, endOffset := n>>3, n&7
 	endMask := ^byte(255 >> byte(endOffset))
@@ -20,7 +23,7 @@ func NewBitset(n int) *Bitset {
 	return &Bitset{make([]byte, (n+7)>>3), n, endIndex, endMask}
 }
 
-// Creates a new bitset from a given byte stream. Returns nil if the
+// NewBitsetFromBytes Creates a new bitset from a given byte stream. Returns nil if the
 // data is invalid in some way.
 func NewBitsetFromBytes(n int, data []byte) *Bitset {
 	bitset := NewBitset(n)
@@ -34,35 +37,41 @@ func NewBitsetFromBytes(n int, data []byte) *Bitset {
 	return bitset
 }
 
+// Set ...
 func (b *Bitset) Set(index int) {
 	b.checkRange(index)
 	b.b[index>>3] |= byte(128 >> byte(index&7))
 }
 
+// Clear ...
 func (b *Bitset) Clear(index int) {
 	b.checkRange(index)
 	b.b[index>>3] &= ^byte(128 >> byte(index&7))
 }
 
+// IsSet ...
 func (b *Bitset) IsSet(index int) bool {
 	b.checkRange(index)
 	return (b.b[index>>3] & byte(128>>byte(index&7))) != 0
 }
 
+// Len ...
 func (b *Bitset) Len() int {
 	return b.n
 }
 
+// InRange ...
 func (b *Bitset) InRange(index int) bool {
 	return 0 <= index && index < b.n
 }
 
 func (b *Bitset) checkRange(index int) {
 	if !b.InRange(index) {
-		log.Errorf("Index %d out of range 0..%d.", index, b.n)
+		common.LOG.Errorf("Index %d out of range 0..%d.", index, b.n)
 	}
 }
 
+// IsEndValid ...
 func (b *Bitset) IsEndValid() bool {
 	if b.endIndex >= 0 {
 		return (b.b[b.endIndex] & b.endMask) == 0
@@ -70,6 +79,7 @@ func (b *Bitset) IsEndValid() bool {
 	return true
 }
 
+// FindNextSet ...
 // TODO: Make this fast
 func (b *Bitset) FindNextSet(index int) int {
 	for i := index; i < b.n; i++ {
@@ -80,6 +90,7 @@ func (b *Bitset) FindNextSet(index int) int {
 	return -1
 }
 
+// FindNextClear ...
 // TODO: Make this fast
 func (b *Bitset) FindNextClear(index int) int {
 	for i := index; i < b.n; i++ {
@@ -90,6 +101,7 @@ func (b *Bitset) FindNextClear(index int) int {
 	return -1
 }
 
+// Bytes ...
 func (b *Bitset) Bytes() []byte {
 	return b.b
 }

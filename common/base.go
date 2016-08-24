@@ -1,15 +1,17 @@
 package common
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
-	log "github.com/cihub/seelog"
-	"github.com/labstack/echo"
-	"github.com/labstack/echo/engine/standard"
+	"github.com/labstack/echo/v4"
+	"github.com/xtfly/log4g"
 )
 
+// Service is a common service interface
 type Service interface {
 	Start() error
 	Stop() bool
@@ -18,6 +20,7 @@ type Service interface {
 	IsRunning() bool
 }
 
+// BaseService is the basic service struct with config and status
 type BaseService struct {
 	name    string
 	running uint32 // atomic
@@ -26,6 +29,7 @@ type BaseService struct {
 	svc     Service
 }
 
+// NewBaseService return created a basic service instance
 func NewBaseService(cfg *Config, name string, svc Service) *BaseService {
 	return &BaseService{
 		name:    name,
@@ -39,74 +43,82 @@ func NewBaseService(cfg *Config, name string, svc Service) *BaseService {
 // init log by config
 func (s *BaseService) initlog() {
 	if s.Cfg.Log != "" {
-		if logger, err := log.LoggerFromConfigAsFile(s.Cfg.Log); err == nil {
-			log.ReplaceLogger(logger)
+		if err := log4g.GetManager().LoadConfigFile(s.Cfg.Log); err != nil {
+			println("load log4g config failed")
 		}
 	}
-
-	// init echo log
-	s.echo.SetLogger(NewEchoLogger())
 }
 
-func (s *BaseService) runEcho() error {
+func (s *BaseService) runEcho() (err error) {
 	net := s.Cfg.Net
-	var sr *standard.Server
-	if net.Tls != nil {
-		sr = standard.WithTLS(fmt.Sprintf("%s:%v", net.IP, net.MgntPort),
-			net.Tls.Cert,
-			net.Tls.Key,
-		)
+	addr := fmt.Sprintf("%s:%v", net.IP, net.MgntPort)
+	LOG.Infof("Starting http server %s", addr)
+	if net.TLS != nil {
+		err = s.echo.StartTLS(addr, net.TLS.Cert, net.TLS.Key)
 	} else {
-		sr = standard.New(fmt.Sprintf("%s:%v", net.IP, net.MgntPort))
+		err = s.echo.Start(addr)
 	}
-	sr.SetHandler(s.echo)
-	sr.SetLogger(s.echo.Logger())
 
-	log.Infof("Starting http server %s:%v", net.IP, net.MgntPort)
-	if err := sr.Start(); err != nil {
-		log.Infof("Start http server %s:%v failed %v", net.IP, net.MgntPort, err)
+	if err != nil {
+		LOG.Infof("Start http server %s failed, %v", addr, err)
 		return err
 	}
 	return nil
 }
 
+// Start the service
 func (s *BaseService) Start() error {
 	if atomic.CompareAndSwapUint32(&s.running, 0, 1) {
 		s.initlog()
-		log.Infof("Starting %s", s.name)
+		LOG.Infof("Starting %s", s.name)
 		if err := s.svc.OnStart(s.Cfg, s.echo); err != nil {
 			return err
 		}
-		go s.runEcho()
-		return nil
-	} else {
-		return errors.New("Started aleadry.")
+
+		done := make(chan error)
+		go func() {
+			done <- s.runEcho()
+		}()
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(500 * time.Millisecond):
+			return nil
+		}
 	}
+	return errors.New("Started aleadry.")
 }
 
+// OnStart implements Service
 func (s *BaseService) OnStart(c *Config, e *echo.Echo) error { return nil }
 
+// Stop the service
 func (s *BaseService) Stop() bool {
 	if atomic.CompareAndSwapUint32(&s.running, 1, 0) {
-		log.Infof("Stopping %s", s.name)
+		LOG.Infof("Stopping %s", s.name)
 		s.svc.OnStop(s.Cfg, s.echo)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := s.echo.Shutdown(ctx); err != nil {
+			LOG.Error("shutdown echo server failed ", err)
+		}
 		return true
-	} else {
-		return false
 	}
+	return false
 }
 
-// Implements Service
+// OnStop implements Service
 func (s *BaseService) OnStop(c *Config, e *echo.Echo) {}
 
-// Implements Service
+// IsRunning implements Service
 func (s *BaseService) IsRunning() bool {
 	return atomic.LoadUint32(&s.running) == 1
 }
 
-func (s *BaseService) Auth(u, p string) bool {
-	if u == s.Cfg.Auth.Username && p == s.Cfg.Auth.Passowrd {
-		return true
+// Auth using basic authorization
+func (s *BaseService) Auth(u, p string, ctx echo.Context) (bool, error) {
+	if u == s.Cfg.Auth.Username && p == s.Cfg.Auth.Password {
+		return true, nil
 	}
-	return false
+	return false, nil
 }

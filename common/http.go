@@ -3,7 +3,6 @@ package common
 import (
 	"bytes"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -11,20 +10,24 @@ import (
 	"time"
 )
 
-func (s *BaseService) HttpGet(addr, urlpath string) (rspBody []byte, err error) {
-	return SendHttpReq(s.Cfg, "GET", addr, urlpath, nil)
+// HTTPGet return the body of the response when send http get method to the server
+func (s *BaseService) HTTPGet(addr, urlpath string) (rspBody []byte, err error) {
+	return SendHTTPReq(s.Cfg, "GET", addr, urlpath, nil)
 }
 
-func (s *BaseService) HttpPost(addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
-	return SendHttpReq(s.Cfg, "POST", addr, urlpath, reqBody)
+// HTTPPost return the body of the response when send http get method to the server
+func (s *BaseService) HTTPPost(addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
+	return SendHTTPReq(s.Cfg, "POST", addr, urlpath, reqBody)
 }
 
-func (s *BaseService) HttpDelete(addr, urlpath string) (err error) {
-	_, err = SendHttpReq(s.Cfg, "DELETE", addr, urlpath, nil)
+// HTTPDelete return the body of the response when send http get method to the server
+func (s *BaseService) HTTPDelete(addr, urlpath string) (err error) {
+	_, err = SendHTTPReq(s.Cfg, "DELETE", addr, urlpath, nil)
 	return
 }
 
-func CreateHttpClient(cfg *Config) *http.Client {
+// CreateHTTPClient return a http client instannce
+func CreateHTTPClient(cfg *Config) *http.Client {
 	var client *http.Client
 	tr := &http.Transport{
 		TLSHandshakeTimeout:   10 * time.Second,
@@ -32,16 +35,17 @@ func CreateHttpClient(cfg *Config) *http.Client {
 		MaxIdleConnsPerHost:   1,
 		DisableKeepAlives:     true,
 	}
-	if cfg.Net.Tls != nil {
+	if cfg.Net.TLS != nil {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	client = &http.Client{Transport: tr}
 	return client
 }
 
-func SendHttpReqWithClien(client *http.Client, cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
+// SendHTTPReqWithClient ...
+func SendHTTPReqWithClient(client *http.Client, cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
 	schema := "http"
-	if cfg.Net.Tls != nil {
+	if cfg.Net.TLS != nil {
 		schema = "https"
 	}
 
@@ -55,7 +59,7 @@ func SendHttpReqWithClien(client *http.Client, cfg *Config, method, addr, urlpat
 		return nil, err
 	}
 
-	req.SetBasicAuth(cfg.Auth.Username, cfg.Auth.Passowrd)
+	req.SetBasicAuth(cfg.Auth.Username, cfg.Auth.Password)
 	req.Header.Set("Content-Type", "application/json")
 	//log.Debugf("Sending http request %v", req)
 
@@ -67,7 +71,7 @@ func SendHttpReqWithClien(client *http.Client, cfg *Config, method, addr, urlpat
 	defer resp.Body.Close()
 
 	if resp.StatusCode > 300 {
-		return nil, errors.New(fmt.Sprintf("Recv http status code %v", resp.StatusCode))
+		return nil, fmt.Errorf("Recv http status code %v", resp.StatusCode)
 	}
 
 	if resp.ContentLength > 0 {
@@ -76,7 +80,8 @@ func SendHttpReqWithClien(client *http.Client, cfg *Config, method, addr, urlpat
 	return
 }
 
-func SendHttpReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
-	client := CreateHttpClient(cfg)
-	return SendHttpReqWithClien(client, cfg, method, addr, urlpath, reqBody)
+// SendHTTPReq ...
+func SendHTTPReq(cfg *Config, method, addr, urlpath string, reqBody []byte) (rspBody []byte, err error) {
+	client := CreateHTTPClient(cfg)
+	return SendHTTPReqWithClient(client, cfg, method, addr, urlpath, reqBody)
 }

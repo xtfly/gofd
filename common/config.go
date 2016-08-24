@@ -7,21 +7,24 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/xtfly/gokits"
+	"github.com/xtfly/gokits/gcrypto"
+	"github.com/xtfly/log4g"
 
 	"gopkg.in/yaml.v2"
 )
 
-// 定义配置映射的结构体
+var (
+	LOG = log4g.GetLogger("gofd")
+)
+
+// Config is struct maping the yaml configuration file
 type Config struct {
 	Server bool //是否为服务端
-	Crypto *gokits.Crypto
+	Crypto *gcrypto.Crypto
 
-	Name string `yaml:"name"`
-
+	Name    string `yaml:"name"`
 	DownDir string `yaml:"downdir,omitempty"` //只有客户端才配置
-
-	Log string `yaml:"log"`
+	Log     string `yaml:"log"`
 
 	Net struct {
 		IP       string `yaml:"ip"`
@@ -31,7 +34,7 @@ type Config struct {
 		AgentMgntPort int `yaml:"agentMgntPort,omitempty"`
 		AgentDataPort int `yaml:"agentDataPort,omitempty"`
 
-		Tls *struct {
+		TLS *struct {
 			Cert string `yaml:"cert"`
 			Key  string `yaml:"key"`
 		} `yaml:"tls,omitempty"`
@@ -39,17 +42,17 @@ type Config struct {
 
 	Auth struct {
 		Username string `yaml:"username"`
-		Passowrd string `yaml:"passowrd"`
+		Password string `yaml:"password"`
 		Factor   string `yaml:"factor"`
-		Crc      string `yaml:"crc"`
 	} `yaml:"auth"`
 
 	Control *Control `yaml:"control"`
 }
 
+// Control is some config item for controling the p2p session
 type Control struct {
-	Speed     int `yaml:"speed"` // Unit: MiBps
-	MaxActive int `yaml:"maxActive"`
+	Speed     int `yaml:"speed"`     // Unit: MiBps
+	MaxActive int `yaml:"maxActive"` //
 	CacheSize int `yaml:"cacheSize"` // Unit: MiB
 }
 
@@ -68,10 +71,13 @@ func (c *Config) defaultValue() {
 	c.DownDir = normalFile(c.DownDir)
 	f, err := os.Stat(c.DownDir)
 	if err == nil || !os.IsExist(err) {
-		os.MkdirAll(c.DownDir, os.ModePerm)
+		if err := os.MkdirAll(c.DownDir, os.ModePerm); err != nil {
+			fmt.Printf("mkdir %s failed", c.DownDir)
+			os.Exit(6)
+		}
 	} else {
 		if !f.IsDir() {
-			fmt.Printf("DownDir is not a directory")
+			fmt.Printf("%s is not a directory", c.DownDir)
 			os.Exit(6)
 		}
 	}
@@ -80,9 +86,9 @@ func (c *Config) defaultValue() {
 		c.Log = normalFile(c.Log)
 	}
 
-	if c.Net.Tls != nil {
-		c.Net.Tls.Cert = normalFile(c.Net.Tls.Cert)
-		c.Net.Tls.Key = normalFile(c.Net.Tls.Key)
+	if c.Net.TLS != nil {
+		c.Net.TLS.Cert = normalFile(c.Net.TLS.Cert)
+		c.Net.TLS.Key = normalFile(c.Net.TLS.Key)
 	}
 
 	if c.Control == nil {
@@ -103,10 +109,10 @@ func (c *Config) defaultValue() {
 func (c *Config) validate() error {
 	if c.Server {
 		if c.Net.AgentMgntPort == 0 {
-			return errors.New("Not set Net.AgentMgntPort in server config file")
+			return errors.New("not set Net.AgentMgntPort in server config file")
 		}
 		if c.Net.AgentDataPort == 0 {
-			return errors.New("Not set Net.AgentDataPort in server config file")
+			return errors.New("not set Net.AgentDataPort in server config file")
 		}
 	}
 
@@ -116,16 +122,16 @@ func (c *Config) validate() error {
 		}
 	}
 
-	if c.Auth.Username == "" || c.Auth.Passowrd == "" || c.Auth.Factor == "" || c.Auth.Crc == "" {
-		return errors.New("Not set auth in  config file")
+	if c.Auth.Username == "" || c.Auth.Password == "" || c.Auth.Factor == "" {
+		return errors.New("not set auth in config file")
 	}
 
 	var err error
-	c.Crypto, err = gokits.NewCrypto(c.Auth.Factor, c.Auth.Crc)
+	c.Crypto, err = gcrypto.NewCrypto(c.Auth.Factor)
 	if err != nil {
 		return err
 	}
-	c.Auth.Passowrd, err = c.Crypto.DecryptStr(c.Auth.Passowrd)
+	c.Auth.Password, err = c.Crypto.DecryptStr(c.Auth.Password)
 	if err != nil {
 		return err
 	}
@@ -133,22 +139,23 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// ParserConfig return the Config instance when parse the configuration file
 func ParserConfig(cfgfile string, server bool) (*Config, error) {
 	ncfg := normalFile(cfgfile)
-	if bs, err := ioutil.ReadFile(ncfg); err != nil {
+	bs, err := ioutil.ReadFile(ncfg)
+	if err != nil {
 		return nil, err
-	} else {
-		cfg := new(Config)
-		cfg.Server = server
-		if err := yaml.Unmarshal(bs, cfg); err != nil {
-			return nil, err
-		}
-
-		if err := cfg.validate(); err != nil {
-			return nil, err
-		}
-
-		cfg.defaultValue()
-		return cfg, nil
 	}
+	cfg := new(Config)
+	cfg.Server = server
+	if err := yaml.Unmarshal(bs, cfg); err != nil {
+		return nil, err
+	}
+
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
+	cfg.defaultValue()
+	return cfg, nil
 }

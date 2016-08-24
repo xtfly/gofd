@@ -9,21 +9,22 @@ import (
 	"path/filepath"
 	"time"
 
-	log "github.com/cihub/seelog"
-	"github.com/xtfly/gokits"
+	"github.com/xtfly/gofd/common"
+	"github.com/xtfly/gokits/gfile"
 )
 
 const (
 	// 同一地址最大连接次数
-	MAX_RETRY_CONNECT_TIMES = 10
+	maxRetryConnectTimes = 10
 )
 
-type P2pSession struct {
+// TaskSession ...
+type TaskSession struct {
 	// 全局信息
 	g *global
 
 	// 任务信息
-	taskId    string
+	taskID    string
 	task      *DispatchTask
 	fileStore FileStore
 
@@ -40,7 +41,7 @@ type P2pSession struct {
 	activePieces map[int]*ActivePiece
 
 	// Peer信息
-	addPeerChan     chan *P2pConn
+	addPeerChan     chan *PeerConn
 	startChan       chan *StartTask
 	peers           map[string]*peer
 	peerMessageChan chan peerMessage
@@ -56,7 +57,7 @@ type P2pSession struct {
 	stopSessChan chan string // sessionmgnt
 
 	//
-	reportor   *reportor
+	reportor   *reporter
 	reportStep int
 
 	//
@@ -65,16 +66,17 @@ type P2pSession struct {
 	finishedAt time.Time
 }
 
-func NewP2pSession(g *global, dt *DispatchTask, stopSessChan chan string) (s *P2pSession, err error) {
-	s = &P2pSession{
+// NewTaskSession ...
+func NewTaskSession(g *global, dt *DispatchTask, stopSessChan chan string) (s *TaskSession, err error) {
+	s = &TaskSession{
 		g:      g,
-		taskId: dt.TaskId,
+		taskID: dt.TaskID,
 		task:   dt,
 
 		activePieces: make(map[int]*ActivePiece),
 		peers:        make(map[string]*peer),
 
-		addPeerChan:     make(chan *P2pConn, 5), // 不要阻塞
+		addPeerChan:     make(chan *PeerConn, 5), // 不要阻塞
 		startChan:       make(chan *StartTask),
 		peerMessageChan: make(chan peerMessage, 5),
 
@@ -82,13 +84,13 @@ func NewP2pSession(g *global, dt *DispatchTask, stopSessChan chan string) (s *P2
 		endedChan: make(chan struct{}),
 
 		stopSessChan: stopSessChan,
-		reportor:     NewReportor(dt.TaskId, g.cfg),
+		reportor:     newReporter(dt.TaskID, g.cfg),
 	}
 	return
 }
 
-func (s *P2pSession) init() error {
-	log.Infof("[%s] Initing p2p session...", s.taskId)
+func (s *TaskSession) init() error {
+	common.LOG.Infof("[%s] Initing p2p session...", s.taskID)
 	fileSystem, err := s.g.fsProvider.NewFS()
 	if err != nil {
 		return err
@@ -105,7 +107,7 @@ func (s *P2pSession) init() error {
 	return nil
 }
 
-func (s *P2pSession) initInServer() error {
+func (s *TaskSession) initInServer() error {
 	if err := s.init(); err != nil {
 		return err
 	}
@@ -117,17 +119,17 @@ func (s *P2pSession) initInServer() error {
 		s.pieceSet.Set(index)
 	}
 
-	log.Infof("[%s] Inited p2p server session", s.taskId)
+	common.LOG.Infof("[%s] Inited p2p server session", s.taskID)
 	s.initedAt = time.Now()
 	return nil
 }
 
-func (s *P2pSession) initInClient() error {
+func (s *TaskSession) initInClient() error {
 	// 客户端与服务端的下载路径不同，修改路径
 	exsited := false
-	for idx, _ := range s.task.MetaInfo.Files {
-		s.task.MetaInfo.Files[idx].Path = s.g.cfg.DownDir
-		exsited = gokits.FileExist(filepath.Join(s.g.cfg.DownDir, s.task.MetaInfo.Files[idx].Name))
+	for _, fd := range s.task.MetaInfo.Files {
+		fd.Path = s.g.cfg.DownDir
+		exsited = gfile.FileExist(filepath.Join(s.g.cfg.DownDir, fd.Name))
 	}
 
 	if err := s.init(); err != nil {
@@ -141,7 +143,7 @@ func (s *P2pSession) initInClient() error {
 		s.goodPieces, _, s.pieceSet, err = checkPieces(s.fileStore, s.totalSize, s.task.MetaInfo)
 		end := time.Now()
 		s.checkPieceTime += end.Sub(start).Seconds()
-		log.Infof("[%s] Computed missing pieces: total(%v), good(%v) (%.2f seconds)", s.taskId,
+		common.LOG.Infof("[%s] Computed missing pieces: total(%v), good(%v) (%.2f seconds)", s.taskID,
 			s.totalPieces, s.goodPieces, s.checkPieceTime)
 		if err != nil {
 			return err
@@ -151,17 +153,17 @@ func (s *P2pSession) initInClient() error {
 		s.goodPieces = 0
 	}
 
-	log.Infof("[%s] Inited p2p client session", s.taskId)
+	common.LOG.Infof("[%s] Inited p2p client session", s.taskID)
 	s.initedAt = time.Now()
 	return nil
 }
 
-func (s *P2pSession) initPeersBitset() {
+func (s *TaskSession) initPeersBitset() {
 	// Enlarge any existing peers piece maps
 	for _, p := range s.peers {
 		if p.have.n != s.totalPieces {
 			if p.have.n != 0 {
-				log.Error("Expected p.have.n == 0")
+				common.LOG.Error("Expected p.have.n == 0")
 				panic("Expected p.have.n == 0")
 			}
 			p.have = NewBitset(s.totalPieces)
@@ -169,11 +171,12 @@ func (s *P2pSession) initPeersBitset() {
 	}
 }
 
-func (s *P2pSession) Start(st *StartTask) {
+// Start ...
+func (s *TaskSession) Start(st *StartTask) {
 	s.startChan <- st
 }
 
-func (s *P2pSession) startImp(st *StartTask) {
+func (s *TaskSession) startImp(st *StartTask) {
 	if s.g.cfg.Server {
 		s.startAt = time.Now()
 		return
@@ -181,12 +184,12 @@ func (s *P2pSession) startImp(st *StartTask) {
 
 	if s.totalPieces == s.goodPieces {
 		// 本地文件的Piece与Block都下载完成，不再需要下载
-		log.Infof("[%s] All piece has already download.", s.taskId)
+		common.LOG.Infof("[%s] All piece has already download.", s.taskID)
 		go s.reportStatus(float32(100))
 		return
 	}
 
-	log.Infof("[%s] Starting p2p session...", s.taskId)
+	common.LOG.Infof("[%s] Starting p2p session...", s.taskID)
 	// 更新路径
 	s.task.LinkChain = st.LinkChain
 
@@ -206,13 +209,13 @@ func (s *P2pSession) startImp(st *StartTask) {
 	s.tryNewPeer()
 	s.initPeersBitset()
 	s.startAt = time.Now()
-	log.Infof("[%s] Started p2p client session", s.taskId)
+	common.LOG.Infof("[%s] Started p2p client session", s.taskID)
 }
 
 // 寻找可用的地址并连接
-func (s *P2pSession) tryNewPeer() {
+func (s *TaskSession) tryNewPeer() {
 	addrs := s.task.LinkChain.DispatchAddrs
-	if s.connFailCount >= MAX_RETRY_CONNECT_TIMES {
+	if s.connFailCount >= maxRetryConnectTimes {
 		s.indexInChain--
 	}
 	if s.indexInChain < 0 {
@@ -223,11 +226,11 @@ func (s *P2pSession) tryNewPeer() {
 }
 
 // 连接其它的Peer
-func (s *P2pSession) connectToPeer(peer string) error {
-	log.Debugf("[%s] Try connect to peer[%s]", s.taskId, peer)
+func (s *TaskSession) connectToPeer(peer string) error {
+	common.LOG.Debugf("[%s] Try connect to peer[%s]", s.taskID, peer)
 	conn, err := net.DialTimeout("tcp", peer, 1*time.Second)
 	if err != nil {
-		log.Errorf("[%s] Failed to connect to peer[%s], error=%v", s.taskId, peer, err)
+		common.LOG.Errorf("[%s] Failed to connect to peer[%s], error=%v", s.taskID, peer, err)
 		conn.Close()
 		s.connFailCount++
 		s.retryConnTimeChan = time.After(50 * time.Microsecond)
@@ -235,9 +238,9 @@ func (s *P2pSession) connectToPeer(peer string) error {
 	}
 
 	// 发送消息头，用于认证
-	err = writeHeader(conn, s.taskId, s.g.cfg)
+	err = writePHeader(conn, s.taskID, s.g.cfg)
 	if err != nil {
-		log.Errorf("[%s] Failed to send header to peer[%s], error=%v", s.taskId, peer, err)
+		common.LOG.Errorf("[%s] Failed to send header to peer[%s], error=%v", s.taskID, peer, err)
 		conn.Close()
 		s.indexInChain-- //连接下一个
 		s.retryConnTimeChan = time.After(50 * time.Microsecond)
@@ -249,42 +252,42 @@ func (s *P2pSession) connectToPeer(peer string) error {
 	_, err = conn.Read(bs)
 	if err != nil {
 		// 认证通过了，但没有返回正确的响应，Peer还没创建对应Task的Session
-		log.Errorf("[%s] Failed to reading header from peer[%s], error=%v", s.taskId, peer, err)
+		common.LOG.Errorf("[%s] Failed to reading header from peer[%s], error=%v", s.taskID, peer, err)
 		conn.Close()
 		s.retryConnTimeChan = time.After(50 * time.Microsecond)
 		return err
 	}
 
 	s.connFailCount = 0
-	log.Infof("[%s] Success to connect to peer[%s]", s.taskId, peer)
-	p2pconn := &P2pConn{
+	common.LOG.Infof("[%s] Success to connect to peer[%s]", s.taskID, peer)
+	p2pconn := &PeerConn{
 		conn:       conn,
 		client:     false, // 对端是Server
 		remoteAddr: conn.RemoteAddr(),
-		taskId:     s.taskId,
+		taskID:     s.taskID,
 	}
 
 	s.addPeerImp(p2pconn)
 	return nil
 }
 
-// 接入其它的Peer连接
-func (s *P2pSession) AcceptNewPeer(c *P2pConn) {
+// AcceptNewPeer 接入其它的Peer连接
+func (s *TaskSession) AcceptNewPeer(c *PeerConn) {
 	// 先回一个连接响应
 	_, err := c.conn.Write([]byte{byte(0xFF)})
 	if err != nil {
-		log.Errorf("[%s] Write connection init response to peer[%s] failed", s.taskId, c.remoteAddr.String())
+		common.LOG.Errorf("[%s] Write connection init response to peer[%s] failed", s.taskID, c.remoteAddr.String())
 		return
 	}
 	s.addPeerChan <- c
 }
 
 // 处理连接到其它成功的Peer，或者是其它Peer的接入
-func (s *P2pSession) addPeerImp(c *P2pConn) {
+func (s *TaskSession) addPeerImp(c *PeerConn) {
 	peerAddr := c.remoteAddr.String()
-	log.Infof("[%s] Add new peer, peer[%s]", c.taskId, peerAddr)
+	common.LOG.Infof("[%s] Add new peer, peer[%s]", c.taskID, peerAddr)
 	// 创建一个Peer对象
-	ps := NewPeer(c, s.task.Speed)
+	ps := newPeer(c, s.task.Speed)
 
 	// 位图
 	ps.have = NewBitset(s.totalPieces)
@@ -301,35 +304,35 @@ func (s *P2pSession) addPeerImp(c *P2pConn) {
 }
 
 // 关闭Peer
-func (s *P2pSession) closePeerAndTryReconn(peer *peer) {
+func (s *TaskSession) closePeerAndTryReconn(peer *peer) {
 	s.ClosePeer(peer)
 	if !peer.client {
 		s.tryNewPeer()
 	}
 }
 
-// 关闭Peer
-func (s *P2pSession) ClosePeer(peer *peer) {
+// ClosePeer 关闭Peer
+func (s *TaskSession) ClosePeer(peer *peer) {
 	peer.Close()
 	s.removeRequests(peer)
 	delete(s.peers, peer.address)
 }
 
 // 删除REQUEST信息
-func (s *P2pSession) removeRequests(p *peer) (err error) {
+func (s *TaskSession) removeRequests(p *peer) (err error) {
 	for k := range p.ourRequests {
 		piece := int(k >> 32)
 		begin := int(k & 0xffffffff)
-		block := begin / STANDARD_BLOCK_LENGTH
-		log.Infof("[%s] Forgetting we requested block %v.%v", s.taskId, piece, block)
+		block := begin / standardBlockLen
+		common.LOG.Infof("[%s] Forgetting we requested block %v.%v", s.taskID, piece, block)
 		s.removeRequest(piece, block)
 	}
-	p.ourRequests = make(map[uint64]time.Time, MAX_OUR_REQUESTS)
+	p.ourRequests = make(map[uint64]time.Time, maxOurRequests)
 	return
 }
 
 // 删除REQUEST信息
-func (s *P2pSession) removeRequest(piece, block int) {
+func (s *TaskSession) removeRequest(piece, block int) {
 	v, ok := s.activePieces[piece]
 	if ok && v.downloaderCount[block] > 0 {
 		v.downloaderCount[block]--
@@ -337,7 +340,7 @@ func (s *P2pSession) removeRequest(piece, block int) {
 }
 
 // 接收Peer消息并发送消息
-func (s *P2pSession) DoMessage(p *peer, message []byte) (err error) {
+func (s *TaskSession) doMessage(p *peer, message []byte) (err error) {
 	if message == nil {
 		return io.EOF // The reader or writer goroutine has exited
 	}
@@ -350,12 +353,12 @@ func (s *P2pSession) DoMessage(p *peer, message []byte) (err error) {
 	return
 }
 
-func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
+func (s *TaskSession) generalMessage(message []byte, p *peer) (err error) {
 	messageID := message[0]
 
 	switch messageID {
 	case HAVE: // 处理Peer发送过来的HAVE消息
-		log.Tracef("[%s] Recv HAVE from peer[%s] ", p.taskId, p.address)
+		common.LOG.Tracef("[%s] Recv HAVE from peer[%s] ", p.taskID, p.address)
 		if len(message) != 5 {
 			return errors.New("Unexpected length")
 		}
@@ -365,36 +368,36 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		}
 		p.have.Set(int(n))
 		if !p.client {
-			for i := 0; i < MAX_OUR_REQUESTS; i++ {
-				s.RequestBlock(p) // 向请此Peer上请求发送块
+			for i := 0; i < maxOurRequests; i++ {
+				s.requestBlock(p) // 向请此Peer上请求发送块
 			}
 		}
 	case BITFIELD: // 处理Peer发送过来的BITFIELD消息
-		log.Tracef("[%s] Recv BITFIELD from peer[%s] isclient=%v", p.taskId, p.address, p.client)
+		common.LOG.Tracef("[%s] Recv BITFIELD from peer[%s] isclient=%v", p.taskID, p.address, p.client)
 		p.have = NewBitsetFromBytes(s.totalPieces, message[1:])
 		if p.have == nil {
 			return errors.New("Invalid bitfield data")
 		}
 		if !p.client {
-			s.RequestBlock(p) // 向Server Peer请求发送块
+			s.requestBlock(p) // 向Server Peer请求发送块
 		}
 	case REQUEST: // 处理Peer发送过来的REQUEST消息
-		log.Tracef("[%s] Recv REQUEST from peer[%s] ", p.taskId, p.address)
+		common.LOG.Tracef("[%s] Recv REQUEST from peer[%s] ", p.taskID, p.address)
 		index, begin, length, err := s.decodeRequest(message, p)
 		if err != nil {
 			return err
 		}
 		return s.sendPiece(p, index, begin, length)
 	case PIECE: // 处理Peer发送过来的PIECE消息
-		log.Tracef("[%s] Recv PIECE from peer[%s]", p.taskId, p.address)
+		common.LOG.Tracef("[%s] Recv PIECE from peer[%s]", p.taskID, p.address)
 		index, begin, length, err := s.decodePiece(message, p)
 		if err != nil {
 			return err
 		}
 
 		if s.pieceSet.IsSet(int(index)) {
-			log.Debugf("[%s] Recv PIECE from peer[%s] is already", p.taskId, p.address)
-			err = s.RequestBlock(p)
+			common.LOG.Debugf("[%s] Recv PIECE from peer[%s] is already", p.taskID, p.address)
+			err = s.requestBlock(p)
 			break //  本Peer已存在此Piece，则继续
 		}
 
@@ -405,8 +408,8 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 		}
 
 		// 存储块的信息
-		s.RecordBlock(p, index, begin, uint32(length))
-		err = s.RequestBlock(p) // 继续向此Peer请求发送块信息
+		s.recordBlock(p, index, begin, uint32(length))
+		err = s.requestBlock(p) // 继续向此Peer请求发送块信息
 	default:
 		return fmt.Errorf("Uknown message id: %d\n", messageID)
 	}
@@ -414,7 +417,7 @@ func (s *P2pSession) generalMessage(message []byte, p *peer) (err error) {
 	return
 }
 
-func (s *P2pSession) decodeRequest(message []byte, p *peer) (index, begin, length uint32, err error) {
+func (s *TaskSession) decodeRequest(message []byte, p *peer) (index, begin, length uint32, err error) {
 	if len(message) != 13 {
 		err = errors.New("Unexpected message length")
 		return
@@ -442,9 +445,9 @@ func (s *P2pSession) decodeRequest(message []byte, p *peer) (index, begin, lengt
 }
 
 // 给Peer发送块消息
-func (s *P2pSession) sendPiece(p *peer, index, begin, length uint32) (err error) {
-	log.Debugf("[%s] Sending block to peer[%s], index=%v, begin=%v, length=%v",
-		s.taskId, p.address, index, begin, length)
+func (s *TaskSession) sendPiece(p *peer, index, begin, length uint32) (err error) {
+	common.LOG.Debugf("[%s] Sending block to peer[%s], index=%v, begin=%v, length=%v",
+		s.taskID, p.address, index, begin, length)
 	buf := make([]byte, length+9)
 	buf[0] = PIECE
 	uint32ToBytes(buf[1:5], index)
@@ -452,7 +455,7 @@ func (s *P2pSession) sendPiece(p *peer, index, begin, length uint32) (err error)
 	_, err = s.fileStore.ReadAt(buf[9:],
 		int64(index)*s.task.MetaInfo.PieceLen+int64(begin))
 	if err != nil {
-		log.Errorf("[%s] Read file failed, error=%v", s.taskId, err)
+		common.LOG.Errorf("[%s] Read file failed, error=%v", s.taskID, err)
 		return
 	}
 	p.sendMessage(buf)
@@ -461,15 +464,15 @@ func (s *P2pSession) sendPiece(p *peer, index, begin, length uint32) (err error)
 }
 
 // 接收块消息
-func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err error) {
-	block := begin / STANDARD_BLOCK_LENGTH
-	log.Debugf("[%s] Received block from peer[%s] %v.%v", s.taskId, p.address, piece, block)
+func (s *TaskSession) recordBlock(p *peer, piece, begin, length uint32) (err error) {
+	block := begin / standardBlockLen
+	common.LOG.Debugf("[%s] Received block from peer[%s] %v.%v", s.taskID, p.address, piece, block)
 
 	requestIndex := (uint64(piece) << 32) | uint64(begin)
 	delete(p.ourRequests, requestIndex)
 	v, ok := s.activePieces[int(piece)]
 	if !ok {
-		log.Debugf("[%s] Received a block we already have from peer[%s], piece=%v.%v", s.taskId, p.address, piece, block)
+		common.LOG.Debugf("[%s] Received a block we already have from peer[%s], piece=%v.%v", s.taskID, p.address, piece, block)
 		return
 	}
 
@@ -481,12 +484,11 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 
 	// Piece完成下载，清理资源，提交文件
 	delete(s.activePieces, int(piece))
-	var pieceBytes []byte
 	start := time.Now()
-	ok, err, pieceBytes = checkPiece(s.fileStore, s.totalSize, s.task.MetaInfo, int(piece))
+	good, pieceBytes, err := checkPiece(s.fileStore, s.totalSize, s.task.MetaInfo, int(piece))
 	s.checkPieceTime += time.Now().Sub(start).Seconds()
-	if !ok || err != nil {
-		log.Errorf("[%s] Closing peer[%s] that sent a bad piece=%v, error=%v", s.taskId, p.address, piece, err)
+	if !good || err != nil {
+		common.LOG.Errorf("[%s] Closing peer[%s] that sent a bad piece=%v, error=%v", s.taskID, p.address, piece, err)
 		go s.reportStatus(float32(-1))
 		p.Close()
 		return
@@ -501,7 +503,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	if s.totalPieces > 0 {
 		percentComplete = float32(s.goodPieces*100) / float32(s.totalPieces)
 	}
-	log.Debugf("[%s] Have %v of %v pieces %v%% complete", s.taskId, s.goodPieces, s.totalPieces,
+	common.LOG.Debugf("[%s] Have %v of %v pieces %v%% complete", s.taskID, s.goodPieces, s.totalPieces,
 		percentComplete)
 	if s.goodPieces == s.totalPieces {
 		s.finishedAt = time.Now() // 下载完成
@@ -526,7 +528,7 @@ func (s *P2pSession) RecordBlock(p *peer, piece, begin, length uint32) (err erro
 	return
 }
 
-func (s *P2pSession) decodePiece(message []byte, p *peer) (index, begin, length uint32, err error) {
+func (s *TaskSession) decodePiece(message []byte, p *peer) (index, begin, length uint32, err error) {
 	if len(message) < 9 {
 		err = errors.New("unexpected message length")
 		return
@@ -548,7 +550,7 @@ func (s *P2pSession) decodePiece(message []byte, p *peer) (index, begin, length 
 		err = errors.New("begin + length out of range")
 		return
 	}
-	if length > MAX_BLOCK_LENGTH {
+	if length > maxBlockLen {
 		err = errors.New("Block length too large")
 		return
 	}
@@ -556,7 +558,7 @@ func (s *P2pSession) decodePiece(message []byte, p *peer) (index, begin, length 
 }
 
 // 请求下载时，选择一个可用的Piece
-func (s *P2pSession) ChoosePiece(p *peer) (piece int) {
+func (s *TaskSession) choosePiece(p *peer) (piece int) {
 	n := s.totalPieces
 	start := rand.Intn(n)
 	piece = s.checkRange(p, start, n)
@@ -566,7 +568,7 @@ func (s *P2pSession) ChoosePiece(p *peer) (piece int) {
 	return
 }
 
-func (s *P2pSession) checkRange(p *peer, start, end int) (piece int) {
+func (s *TaskSession) checkRange(p *peer, start, end int) (piece int) {
 	clampedEnd := min(end, min(p.have.n, s.pieceSet.n))
 	for i := start; i < clampedEnd; i++ {
 		// 本Peer没有，但其它Peer存在时
@@ -580,7 +582,7 @@ func (s *P2pSession) checkRange(p *peer, start, end int) (piece int) {
 }
 
 // 构建请求块（本Peer缺失）信息
-func (s *P2pSession) RequestBlock(p *peer) (err error) {
+func (s *TaskSession) requestBlock(p *peer) (err error) {
 	for k := range s.activePieces {
 		if p.have.IsSet(k) {
 			err = s.requestBlock2(p, k, false)
@@ -591,7 +593,7 @@ func (s *P2pSession) RequestBlock(p *peer) (err error) {
 	}
 
 	// No active pieces. (Or no suitable active pieces.) Pick one
-	piece := s.ChoosePiece(p)
+	piece := s.choosePiece(p)
 	if piece < 0 {
 		for k := range s.activePieces {
 			if p.have.IsSet(k) {
@@ -613,22 +615,22 @@ func (s *P2pSession) RequestBlock(p *peer) (err error) {
 
 }
 
-func (s *P2pSession) requestBlock2(p *peer, piece int, endGame bool) (err error) {
+func (s *TaskSession) requestBlock2(p *peer, piece int, endGame bool) (err error) {
 	v := s.activePieces[piece]
 	block := v.chooseBlockToDownload(endGame)
 	if block >= 0 {
 		s.requestBlockImp(p, piece, block)
 	} else {
-		//log.Debugf("[%s] Request block from peer[%s], EOF", s.taskId, p.address)
+		//common.LOG.Debugf("[%s] Request block from peer[%s], EOF", s.taskID, p.address)
 		return io.EOF
 	}
 	return
 }
 
 // Request a block
-func (s *P2pSession) requestBlockImp(p *peer, piece int, block int) {
-	begin := block * STANDARD_BLOCK_LENGTH
-	length := STANDARD_BLOCK_LENGTH
+func (s *TaskSession) requestBlockImp(p *peer, piece int, block int) {
+	begin := block * standardBlockLen
+	length := standardBlockLen
 	if piece == s.totalPieces-1 {
 		left := s.lastPieceLength - begin
 		if left < length {
@@ -636,19 +638,20 @@ func (s *P2pSession) requestBlockImp(p *peer, piece int, block int) {
 		}
 	}
 
-	//log.Tracef("[%s] Requesting block from peer[%s], piece=%v.%v, length=%v", s.taskId, p.address, piece, block, length)
+	//common.LOG.Tracef("[%s] Requesting block from peer[%s], piece=%v.%v, length=%v", s.taskID, p.address, piece, block, length)
 	p.SendRequest(piece, begin, length)
 	return
 }
 
-func (s *P2pSession) pieceLength(piece int) int {
+func (s *TaskSession) pieceLength(piece int) int {
 	if piece < s.totalPieces-1 {
 		return int(s.task.MetaInfo.PieceLen)
 	}
 	return s.lastPieceLength
 }
 
-func (s *P2pSession) Quit() (err error) {
+// Quit ...
+func (s *TaskSession) Quit() {
 	select {
 	case s.quitChan <- struct{}{}:
 	case <-s.endedChan: // 防quit阻塞
@@ -656,15 +659,14 @@ func (s *P2pSession) Quit() (err error) {
 	return
 }
 
-func (s *P2pSession) shutdown() (err error) {
+func (s *TaskSession) shutdown() {
 	for _, peer := range s.peers {
 		s.ClosePeer(peer)
 	}
 
 	if s.fileStore != nil {
-		err = s.fileStore.Close()
-		if err != nil {
-			log.Errorf("[%s] Error closing filestore : %v", s.taskId, err)
+		if err := s.fileStore.Close(); err != nil {
+			common.LOG.Errorf("[%s] Error closing filestore : %v", s.taskID, err)
 		}
 	}
 
@@ -676,21 +678,21 @@ func (s *P2pSession) shutdown() (err error) {
 	return
 }
 
-// 初始化
-func (s *P2pSession) Init() {
+// Init 初始化
+func (s *TaskSession) Init() {
 	// 开启缓存
 	if s.fileStore != nil {
-		cache := s.g.cacher.NewCache(s.taskId, s.totalPieces, int(s.task.MetaInfo.PieceLen), s.totalSize)
+		cache := s.g.cache.NewCache(s.taskID, s.totalPieces, int(s.task.MetaInfo.PieceLen), s.totalSize)
 		s.fileStore.SetCache(cache)
 	}
 
 	if s.g.cfg.Server {
 		if err := s.initInServer(); err != nil {
-			log.Errorf("[%s] Init p2p server session failed, %v", s.taskId, err)
+			common.LOG.Errorf("[%s] Init p2p server session failed, %v", s.taskID, err)
 		}
 	} else {
 		if err := s.initInClient(); err != nil {
-			log.Errorf("[%s] Init p2p client session failed, %v", s.taskId, err)
+			common.LOG.Errorf("[%s] Init p2p client session failed, %v", s.taskID, err)
 		}
 	}
 
@@ -708,10 +710,10 @@ func (s *P2pSession) Init() {
 		case pm := <-s.peerMessageChan:
 			peer, message := pm.peer, pm.message
 			peer.lastReadTime = time.Now()
-			err2 := s.DoMessage(peer, message)
+			err2 := s.doMessage(peer, message)
 			if err2 != nil {
 				if err2 != io.EOF {
-					log.Error("[", s.taskId, "] Closing peer[", peer.address, "] because ", err2)
+					common.LOG.Error("[", s.taskID, "] Closing peer[", peer.address, "] because ", err2)
 					s.closePeerAndTryReconn(peer)
 				} else {
 					s.ClosePeer(peer)
@@ -720,52 +722,52 @@ func (s *P2pSession) Init() {
 		case <-keepAliveChan:
 			if s.timeout() {
 				// Session超时没有启动，需要stop
-				s.stopSessChan <- s.taskId
-				log.Info("[", s.taskId, "] P2p session is timeout")
+				s.stopSessChan <- s.taskID
+				common.LOG.Info("[", s.taskID, "] P2p session is timeout")
 			}
 			s.peersKeepAlive()
 		case <-tickChan:
 			if !s.g.cfg.Server && s.totalPieces != s.goodPieces {
 				speed := humanSize(float64(s.downloaded-lastDownloaded) / tickDuration.Seconds())
 				lastDownloaded = s.downloaded
-				log.Infof("[%s] downloaded: %d(%s/s), pieces: %d/%d, check pieces: (%.2f seconds)",
-					s.taskId, s.downloaded, speed, s.goodPieces, s.totalPieces, s.checkPieceTime)
+				common.LOG.Infof("[%s] downloaded: %d(%s/s), pieces: %d/%d, check pieces: (%.2f seconds)",
+					s.taskID, s.downloaded, speed, s.goodPieces, s.totalPieces, s.checkPieceTime)
 			}
 		case <-s.retryConnTimeChan:
 			s.tryNewPeer()
 		case <-s.quitChan:
-			log.Info("[", s.taskId, "] Quit p2p session")
+			common.LOG.Info("[", s.taskID, "] Quit p2p session")
 			s.shutdown()
 			return
 		}
 	}
 }
 
-func (s *P2pSession) doCheckRequests(p *peer) (err error) {
+func (s *TaskSession) doCheckRequests(p *peer) (err error) {
 	now := time.Now()
 	for k, v := range p.ourRequests {
 		if now.Sub(v).Seconds() > 30 {
 			piece := int(k >> 32)
-			block := int(k&0xffffffff) / STANDARD_BLOCK_LENGTH
-			log.Error("[", s.taskId, "] Timing out request of ", piece, ".", block)
+			block := int(k&0xffffffff) / standardBlockLen
+			common.LOG.Error("[", s.taskID, "] Timing out request of ", piece, ".", block)
 			s.removeRequest(piece, block)
 		}
 	}
 	return
 }
 
-func (s *P2pSession) peersKeepAlive() {
+func (s *TaskSession) peersKeepAlive() {
 	now := time.Now()
 	for _, peer := range s.peers {
 		if peer.lastReadTime.Second() != 0 && now.Sub(peer.lastReadTime) > 3*time.Minute {
-			log.Error("[", s.taskId, "] Closing peer [", peer.address, "] because timed out")
+			common.LOG.Error("[", s.taskID, "] Closing peer [", peer.address, "] because timed out")
 			s.ClosePeer(peer)
 			continue
 		}
 		err2 := s.doCheckRequests(peer)
 		if err2 != nil {
 			if err2 != io.EOF {
-				log.Error("[", s.taskId, "] Closing peer[", peer.address, "] because", err2)
+				common.LOG.Error("[", s.taskID, "] Closing peer[", peer.address, "] because", err2)
 			}
 			s.ClosePeer(peer)
 			continue
@@ -775,7 +777,7 @@ func (s *P2pSession) peersKeepAlive() {
 }
 
 // 检查是否超时了
-func (s *P2pSession) timeout() bool {
+func (s *TaskSession) timeout() bool {
 	now := time.Now()
 	if s.startAt.IsZero() && now.Sub(s.initedAt) >= 3*time.Minute {
 		return true
@@ -787,6 +789,6 @@ func (s *P2pSession) timeout() bool {
 	return false
 }
 
-func (s *P2pSession) reportStatus(pecent float32) {
+func (s *TaskSession) reportStatus(pecent float32) {
 	s.reportor.DoReport(s.task.LinkChain.ServerAddr, pecent)
 }

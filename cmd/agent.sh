@@ -1,1 +1,1 @@
-go run -race main.go -a $GOPATH/src/github.com/xtfly/gofd/config/agent.yml
+go run -race main.go -a ../config/agent.yml

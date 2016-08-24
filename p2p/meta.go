@@ -3,17 +3,17 @@ package p2p
 import (
 	"crypto/sha1"
 	"fmt"
+	"github.com/labstack/gommon/log"
 	"io"
 	"os"
 	"path"
-
-	log "github.com/cihub/seelog"
 )
 
-// FileSystem接口适配
+// fileSystemAdapter FileSystem接口适配
 type fileSystemAdapter struct {
 }
 
+// Open ...
 func (f *fileSystemAdapter) Open(name []string, length int64) (file File, err error) {
 	var ff *os.File
 	ff, err = os.Open(path.Clean(path.Join(name...)))
@@ -33,6 +33,7 @@ func (f *fileSystemAdapter) Open(name []string, length int64) (file File, err er
 	return
 }
 
+// Close ...
 func (f *fileSystemAdapter) Close() error {
 	return nil
 }
@@ -49,6 +50,7 @@ func (m *MetaInfo) addFiles(fileInfo os.FileInfo, file string, idx int) (err err
 	return
 }
 
+// CreateFileMeta ...
 func CreateFileMeta(roots []string, pieceLen int64) (mi *MetaInfo, err error) {
 	mi = &MetaInfo{Files: make([]*FileDict, len(roots))}
 	for idx, f := range roots {
@@ -113,12 +115,12 @@ func sha1Sum(file string) (sum string, err error) {
 }
 
 const (
-	MinimumPieceLength   = 16 * 1024
-	TargetPieceCountLog2 = 10
-	TargetPieceCountMin  = 1 << TargetPieceCountLog2
+	minimumPieceLength   = 16 * 1024
+	targetPieceCountLog2 = 10
+	targetPieceCountMin  = 1 << targetPieceCountLog2
 
-	// Target piece count should be < TargetPieceCountMax
-	TargetPieceCountMax = TargetPieceCountMin << 1
+	// Target piece count should be < targetPieceCountMax
+	targetPieceCountMax = targetPieceCountMin << 1
 )
 
 // Choose a good piecelength.
@@ -126,9 +128,9 @@ func choosePieceLength(totalLength int64) (pieceLength int64) {
 	// Must be a power of 2.
 	// Must be a multiple of 16KB
 	// Prefer to provide around 1024..2048 pieces.
-	pieceLength = MinimumPieceLength
+	pieceLength = minimumPieceLength
 	pieces := totalLength / pieceLength
-	for pieces >= TargetPieceCountMax {
+	for pieces >= targetPieceCountMax {
 		pieceLength <<= 1
 		pieces >>= 1
 	}

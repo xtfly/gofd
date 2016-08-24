@@ -1,8 +1,0 @@
-<seelog type="sync" minlevel="info" maxlevel="error">
-    <outputs formatid="main">
-        <console/>
-    </outputs>
-    <formats>
-        <format id="main" format="%Date(2006 Jan 02/3:04:05.000) [%LEV] %Msg (%File:%Line)%n"/>
-    </formats>
-</seelog>

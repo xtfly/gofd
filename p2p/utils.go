@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -22,20 +23,15 @@ func min(a, b int) int {
 }
 
 func uint32ToBytes(buf []byte, n uint32) {
-	buf[0] = byte(n >> 24)
-	buf[1] = byte(n >> 16)
-	buf[2] = byte(n >> 8)
-	buf[3] = byte(n)
+	binary.BigEndian.PutUint32(buf, n)
 }
 
 func bytesToUint32(buf []byte) uint32 {
-	return (uint32(buf[0]) << 24) |
-		(uint32(buf[1]) << 16) |
-		(uint32(buf[2]) << 8) | uint32(buf[3])
+	return binary.BigEndian.Uint32(buf)
 }
 
 func writeNBOUint32(w io.Writer, n uint32) (err error) {
-	var buf []byte = make([]byte, 4)
+	buf := make([]byte, 4)
 	uint32ToBytes(buf, n)
 	_, err = w.Write(buf[0:])
 	return
@@ -43,7 +39,7 @@ func writeNBOUint32(w io.Writer, n uint32) (err error) {
 
 func readNBOUint32(r io.Reader) (n uint32, err error) {
 	var buf [4]byte
-	_, err = r.Read(buf[0:])
+	_, err = io.ReadFull(r, buf[0:])
 	if err != nil {
 		return
 	}

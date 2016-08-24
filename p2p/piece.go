@@ -9,10 +9,10 @@ import (
 
 const (
 	// 每个Piece分成多个Block，每次下载块的大小
-	STANDARD_BLOCK_LENGTH = 32 * 1024
+	standardBlockLen = 32 * 1024
 
 	// 最大块的长度
-	MAX_BLOCK_LENGTH = 128 * 1024
+	maxBlockLen = 128 * 1024
 )
 
 type chunk struct {
@@ -79,7 +79,7 @@ func computeSums(fs FileStore, totalLength int64, pieceLength int64) (sums []byt
 				piece = piece[0 : totalLength-i*pieceLength]
 			}
 			// Ignore errors.
-			fs.ReadAt(piece, i*pieceLength)
+			_, _ = fs.ReadAt(piece, i*pieceLength)
 			hashes <- chunk{i: i, data: piece}
 		}
 		close(hashes)
@@ -107,7 +107,7 @@ func hashPiece(h chan chunk, result chan chunk) {
 	}
 }
 
-func computePieceSum(fs FileStore, totalLength int64, pieceLength int64, pieceIndex int) (sum []byte, err error, piece []byte) {
+func computePieceSum(fs FileStore, totalLength int64, pieceLength int64, pieceIndex int) (sum []byte, piece []byte, err error) {
 	numPieces := (totalLength + pieceLength - 1) / pieceLength
 	hasher := sha1.New()
 	piece = make([]byte, pieceLength)
@@ -126,10 +126,10 @@ func computePieceSum(fs FileStore, totalLength int64, pieceLength int64, pieceIn
 	return
 }
 
-func checkPiece(fs FileStore, totalLength int64, m *MetaInfo, pieceIndex int) (good bool, err error, piece []byte) {
+func checkPiece(fs FileStore, totalLength int64, m *MetaInfo, pieceIndex int) (good bool, piece []byte, err error) {
 	ref := m.Pieces
 	var currentSum []byte
-	currentSum, err, piece = computePieceSum(fs, totalLength, m.PieceLen, pieceIndex)
+	currentSum, piece, err = computePieceSum(fs, totalLength, m.PieceLen, pieceIndex)
 	if err != nil {
 		return
 	}
@@ -143,14 +143,15 @@ func checkPiece(fs FileStore, totalLength int64, m *MetaInfo, pieceIndex int) (g
 	return
 }
 
-// 正在下载的Piece
+// ActivePiece 正在下载的Piece
 type ActivePiece struct {
 	downloaderCount []int // -1 means piece is already downloaded
 	pieceLength     int
 }
 
+// NewActivePiece ...
 func NewActivePiece(pieceLength int) *ActivePiece {
-	pieceCount := (pieceLength + STANDARD_BLOCK_LENGTH - 1) / STANDARD_BLOCK_LENGTH
+	pieceCount := (pieceLength + standardBlockLen - 1) / standardBlockLen
 	return &ActivePiece{make([]int, pieceCount), pieceLength}
 }
 

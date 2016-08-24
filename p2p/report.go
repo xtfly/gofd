@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	log "github.com/cihub/seelog"
 	"github.com/xtfly/gofd/common"
 )
 
@@ -13,19 +12,19 @@ type reportInfo struct {
 	percentComplete float32
 }
 
-type reportor struct {
-	taskId string
+type reporter struct {
+	taskID string
 	cfg    *common.Config
 	client *http.Client
 
 	reportChan chan *reportInfo
 }
 
-func NewReportor(taskId string, cfg *common.Config) *reportor {
-	r := &reportor{
-		taskId:     taskId,
+func newReporter(taskID string, cfg *common.Config) *reporter {
+	r := &reporter{
+		taskID:     taskID,
 		cfg:        cfg,
-		client:     common.CreateHttpClient(cfg),
+		client:     common.CreateHTTPClient(cfg),
 		reportChan: make(chan *reportInfo, 20),
 	}
 
@@ -33,39 +32,39 @@ func NewReportor(taskId string, cfg *common.Config) *reportor {
 	return r
 }
 
-func (r *reportor) run() {
+func (r *reporter) run() {
 	for rc := range r.reportChan {
 		r.reportImp(rc)
 	}
 }
 
-func (r *reportor) DoReport(serverAddr string, pecent float32) {
+func (r *reporter) DoReport(serverAddr string, pecent float32) {
 	r.reportChan <- &reportInfo{serverAddr: serverAddr, percentComplete: pecent}
 }
 
-func (r *reportor) Close() {
+func (r *reporter) Close() {
 	close(r.reportChan)
 }
 
-func (r *reportor) reportImp(ri *reportInfo) {
+func (r *reporter) reportImp(ri *reportInfo) {
 	if int(ri.percentComplete) == 100 {
-		log.Infof("[%s] Report session status... completed", r.taskId)
+		common.LOG.Infof("[%s] Report session status... completed", r.taskID)
 	}
 	csr := &StatusReport{
-		TaskId:          r.taskId,
+		TaskID:          r.taskID,
 		IP:              r.cfg.Net.IP,
 		PercentComplete: ri.percentComplete,
 	}
 	bs, err := json.Marshal(csr)
 	if err != nil {
-		log.Errorf("[%s] Report session status failed. error=%v", r.taskId, err)
+		common.LOG.Errorf("[%s] Report session status failed. error=%v", r.taskID, err)
 		return
 	}
 
-	_, err = common.SendHttpReq(r.cfg, "POST",
+	_, err = common.SendHTTPReq(r.cfg, "POST",
 		ri.serverAddr, "/api/v1/server/tasks/status", bs)
 	if err != nil {
-		log.Errorf("[%s] Report session status failed. error=%v", r.taskId, err)
+		common.LOG.Errorf("[%s] Report session status failed. error=%v", r.taskID, err)
 	}
 	return
 }

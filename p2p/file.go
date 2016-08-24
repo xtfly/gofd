@@ -2,12 +2,12 @@ package p2p
 
 import (
 	"errors"
+	"github.com/labstack/gommon/log"
+	"github.com/xtfly/gofd/common"
 	"io"
-
-	log "github.com/cihub/seelog"
 )
 
-// Interface for a file.
+// File Interface for a file.
 // Multiple goroutines may access a File at the same time.
 type File interface {
 	io.ReaderAt
@@ -15,18 +15,18 @@ type File interface {
 	io.Closer
 }
 
-//Interface for a provider of filesystems.
+// FsProvider Interface for a provider of filesystems.
 type FsProvider interface {
 	NewFS() (FileSystem, error)
 }
 
-// Interface for a file system. A file system contains files.
+// FileSystem Interface for a file system. A file system contains files.
 type FileSystem interface {
 	Open(name []string, length int64) (file File, err error)
 	io.Closer
 }
 
-// A torrent file store.
+// FileStore a file store.
 type FileStore interface {
 	io.ReaderAt
 	io.WriterAt
@@ -47,7 +47,7 @@ type fileEntry struct {
 	file   File
 }
 
-// 根据元数据信息打开所有文件
+// NewFileStore 根据元数据信息打开所有文件
 func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, totalSize int64, err error) {
 	fs := &fileStore{}
 	fs.fileSystem = fileSystem
@@ -56,12 +56,11 @@ func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, totalSize
 	fs.files = make([]fileEntry, numFiles)
 	fs.offsets = make([]int64, numFiles)
 
-	for i, _ := range info.Files {
-		src := info.Files[i]
+	for i, src := range info.Files {
 		var file File
 		file, err = fs.fileSystem.Open([]string{src.Path, src.Name}, src.Length)
 		if err != nil {
-			log.Errorf("Open file failed, file=%v/%v, error=%v", src.Path, src.Name, err)
+			common.LOG.Errorf("Open file failed, file=%v/%v, error=%v", src.Path, src.Name, err)
 			// Close all files opened up to now.
 			for i2 := 0; i2 < i; i2++ {
 				fs.files[i2].file.Close()
@@ -77,6 +76,7 @@ func NewFileStore(info *MetaInfo, fileSystem FileSystem) (f FileStore, totalSize
 	return
 }
 
+// SetCache ...
 func (f *fileStore) SetCache(cache FileCache) {
 	f.cache = cache
 }
@@ -98,12 +98,13 @@ func (f *fileStore) find(offset int64) int {
 	return low
 }
 
+// ReadAt ...
 func (f *fileStore) ReadAt(p []byte, off int64) (int, error) {
 	if f.cache == nil {
 		return f.RawReadAt(p, off)
 	}
 
-	unfullfilled := f.cache.ReadAt(p, off)
+	unfullfilled := f.cache.readAt(p, off)
 
 	var retErr error
 	for _, unf := range unfullfilled {
@@ -116,6 +117,7 @@ func (f *fileStore) ReadAt(p []byte, off int64) (int, error) {
 	return len(p), retErr
 }
 
+// RawReadAt ...
 func (f *fileStore) RawReadAt(p []byte, off int64) (n int, err error) {
 	index := f.find(off)
 	for len(p) > 0 && index < len(f.offsets) {
@@ -140,26 +142,27 @@ func (f *fileStore) RawReadAt(p []byte, off int64) (n int, err error) {
 	}
 	// At this point if there's anything left to read it means we've run off the
 	// end of the file store. Read zeros. This is defined by the bittorrent protocol.
-	for i, _ := range p {
+	for i := range p {
 		p[i] = 0
 	}
 	return
 }
 
+// WriteAt ...
 func (f *fileStore) WriteAt(p []byte, off int64) (int, error) {
 	if f.cache != nil {
-		needRawWrite := f.cache.WriteAt(p, off)
+		needRawWrite := f.cache.writeAt(p, off)
 		if needRawWrite != nil {
 			for _, nc := range needRawWrite {
 				f.RawWriteAt(nc.data, nc.i)
 			}
 		}
 		return len(p), nil
-	} else {
-		return f.RawWriteAt(p, off)
 	}
+	return f.RawWriteAt(p, off)
 }
 
+// Commit ...
 func (f *fileStore) Commit(pieceNum int, piece []byte, off int64) {
 	if f.cache != nil {
 		_, err := f.RawWriteAt(piece, off)
@@ -171,6 +174,7 @@ func (f *fileStore) Commit(pieceNum int, piece []byte, off int64) {
 	}
 }
 
+// RawWriteAt ...
 func (f *fileStore) RawWriteAt(p []byte, off int64) (n int, err error) {
 	index := f.find(off)
 	for len(p) > 0 && index < len(f.offsets) {
@@ -196,7 +200,7 @@ func (f *fileStore) RawWriteAt(p []byte, off int64) (n int, err error) {
 	// At this point if there's anything left to write it means we've run off the
 	// end of the file store. Check that the data is zeros.
 	// This is defined by the bittorrent protocol.
-	for i, _ := range p {
+	for i := range p {
 		if p[i] != 0 {
 			err = errors.New("Unexpected non-zero data at end of store.")
 			n = n + i
@@ -207,6 +211,7 @@ func (f *fileStore) RawWriteAt(p []byte, off int64) (n int, err error) {
 	return
 }
 
+// Close ...
 func (f *fileStore) Close() (err error) {
 	for i := range f.files {
 		f.files[i].file.Close()

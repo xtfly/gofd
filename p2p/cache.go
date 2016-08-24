@@ -1,24 +1,26 @@
 package p2p
 
 import (
+	"github.com/labstack/gommon/log"
+	"github.com/xtfly/gofd/common"
 	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	log "github.com/cihub/seelog"
 )
 
+// CacheProvider ...
 type CacheProvider interface {
 	NewCache(infohash string, numPieces int, pieceLength int, totalSize int64) FileCache
 }
 
+// FileCache ...
 type FileCache interface {
 	//Read what's cached, returns parts that weren't available to read.
-	ReadAt(p []byte, offset int64) []chunk
+	readAt(p []byte, offset int64) []chunk
 	//Writes to cache, returns uncommitted data that has been trimmed.
-	WriteAt(p []byte, offset int64) []chunk
+	writeAt(p []byte, offset int64) []chunk
 	//Marks a piece as committed to permanent storage.
 	MarkCommitted(piece int)
 	//Close the cache and free all the things
@@ -39,23 +41,25 @@ func (a byTime) Len() int           { return len(a) }
 func (a byTime) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byTime) Less(i, j int) bool { return a[i].atime.Before(a[j].atime) }
 
-//This provider creates a ram cache for each torrent.
+//RAMCacheProvider provider creates a ram cache for each torrent.
 //Each time a cache is created or closed, all cache
 //are recalculated so they total <= capacity (in MiB).
-type RamCacheProvider struct {
+type RAMCacheProvider struct {
 	capacity int
-	caches   map[string]*RamCache
+	caches   map[string]*RAMCache
 	m        *sync.Mutex
 }
 
-func NewRamCacheProvider(capacity int) CacheProvider {
-	rc := &RamCacheProvider{capacity, make(map[string]*RamCache), new(sync.Mutex)}
+// NewRAMCacheProvider ...
+func NewRAMCacheProvider(capacity int) CacheProvider {
+	rc := &RAMCacheProvider{capacity, make(map[string]*RAMCache), new(sync.Mutex)}
 	return rc
 }
 
-func (r *RamCacheProvider) NewCache(infohash string, numPieces int, pieceSize int, torrentLength int64) FileCache {
+// NewCache ...
+func (r *RAMCacheProvider) NewCache(infohash string, numPieces int, pieceSize int, torrentLength int64) FileCache {
 	i := uint32(1)
-	rc := &RamCache{
+	rc := &RAMCache{
 		pieceSize:     pieceSize,
 		atimes:        make([]time.Time, numPieces),
 		store:         make([][]byte, numPieces),
@@ -74,14 +78,14 @@ func (r *RamCacheProvider) NewCache(infohash string, numPieces int, pieceSize in
 	return rc
 }
 
-//Rebalance the cache capacity allocations; has to be called on each cache creation or deletion.
+//rebalance the cache capacity allocations; has to be called on each cache creation or deletion.
 //'shouldTrim', if true, causes trimCommitted() to be called on all the caches. Recommended if a new cache was created
 //because otherwise the old caches would stay over the new capacity until their next WriteAt happens.
-func (r *RamCacheProvider) rebalance(shouldTrim bool) {
+func (r *RAMCacheProvider) rebalance(shouldTrim bool) {
 	//Cache size is a diminishing return thing:
 	//The more of it a torrent has, the less of a difference additional cache makes.
 	//Thus, instead of scaling the distribution lineraly with torrent size, we'll do it by square-root
-	log.Debug("Rebalancing caches...")
+	common.LOG.Debug("Rebalancing caches...")
 	var scalingTotal float64
 	sqrts := make(map[string]float64)
 	for i, cache := range r.caches {
@@ -106,13 +110,14 @@ func (r *RamCacheProvider) rebalance(shouldTrim bool) {
 	}
 }
 
-func (r *RamCacheProvider) cacheClosed(infohash string) {
+func (r *RAMCacheProvider) cacheClosed(infohash string) {
 	r.m.Lock()
 	delete(r.caches, infohash)
 	r.rebalance(false)
 	r.m.Unlock()
 }
 
+// RAMCache ...
 //'pieceSize' is the size of the average piece
 //'capacity' is how many pieces the cache can hold
 //'actualUsage' is how many pieces the cache has at the moment
@@ -124,7 +129,7 @@ func (r *RamCacheProvider) cacheClosed(infohash string) {
 //'torrentLength' is the number of bytes in the torrent
 //'cacheProvider' is a pointer to the cacheProvider that created this cache
 //'infohash' is the infohash of the torrent
-type RamCache struct {
+type RAMCache struct {
 	pieceSize     int
 	capacity      *uint32 //Access only through getter/setter
 	actualUsage   int
@@ -134,20 +139,21 @@ type RamCache struct {
 	isBoxCommit   Bitset
 	isByteSet     []Bitset
 	torrentLength int64
-	cacheProvider *RamCacheProvider
+	cacheProvider *RAMCacheProvider
 	infohash      string
 	m             sync.RWMutex
 }
 
-func (r *RamCache) Close() {
+// Close ...
+func (r *RAMCache) Close() {
 	r.cacheProvider.cacheClosed(r.infohash)
 	//We don't need to do anything else. The garbage collector will take care of it.
 }
 
-func (r *RamCache) ReadAt(p []byte, off int64) []chunk {
+func (r *RAMCache) readAt(p []byte, off int64) []chunk {
 	r.m.RLock()
 	defer r.m.RUnlock()
-	unfulfilled := make([]chunk, 0)
+	var unfulfilled []chunk
 
 	boxI := int(off / int64(r.pieceSize))
 	boxOff := int(off % int64(r.pieceSize))
@@ -199,7 +205,8 @@ func (r *RamCache) ReadAt(p []byte, off int64) []chunk {
 	return unfulfilled
 }
 
-func (r *RamCache) WriteAt(p []byte, off int64) []chunk {
+// writeAt
+func (r *RAMCache) writeAt(p []byte, off int64) []chunk {
 	r.m.Lock()
 	defer r.m.Unlock()
 	boxI := int(off / int64(r.pieceSize))
@@ -232,7 +239,8 @@ func (r *RamCache) WriteAt(p []byte, off int64) []chunk {
 	return nil
 }
 
-func (r *RamCache) MarkCommitted(piece int) {
+// MarkCommitted ...
+func (r *RAMCache) MarkCommitted(piece int) {
 	r.m.Lock()
 	defer r.m.Unlock()
 	if r.store[piece] != nil {
@@ -242,7 +250,7 @@ func (r *RamCache) MarkCommitted(piece int) {
 	}
 }
 
-func (r *RamCache) removeBox(boxI int) {
+func (r *RAMCache) removeBox(boxI int) {
 	r.isBoxFull.Clear(boxI)
 	r.isBoxCommit.Clear(boxI)
 	r.isByteSet[boxI] = *NewBitset(0)
@@ -250,17 +258,17 @@ func (r *RamCache) removeBox(boxI int) {
 	r.actualUsage--
 }
 
-func (r *RamCache) getCapacity() int {
+func (r *RAMCache) getCapacity() int {
 	return int(atomic.LoadUint32(r.capacity))
 }
 
-func (r *RamCache) setCapacity(capacity int) {
+func (r *RAMCache) setCapacity(capacity int) {
 	atomic.StoreUint32(r.capacity, uint32(capacity))
 }
 
 //Trim stuff that's already been committed
 //Return true if we got underneath capacity, false if not.
-func (r *RamCache) trimCommitted() bool {
+func (r *RAMCache) trimCommitted() bool {
 	r.m.Lock()
 	defer r.m.Unlock()
 	for i := 0; i < r.isBoxCommit.Len(); i++ {
@@ -275,12 +283,12 @@ func (r *RamCache) trimCommitted() bool {
 }
 
 //Trim excess data. Returns any uncommitted chunks that were trimmed
-func (r *RamCache) trim() []chunk {
+func (r *RAMCache) trim() []chunk {
 	if r.trimCommitted() {
 		return nil
 	}
 
-	retVal := make([]chunk, 0)
+	var retVal []chunk
 
 	//Still need more space? figure out what's oldest
 	//RawWrite it to storage, and clear that then

@@ -16,7 +16,7 @@ S端与BT的Tracker机制也不一样，它不会维护节点的已下载的文�
 ## 第三方依赖
 
  * Web框架：[echo](https://github.com/labstack/echo)
- * 日志：[seelog](https://github.com/cihub/seelog)
+ * 日志：[log4g](https://github.com/xtfly/log4g)
  * 工具库（Cache,Crypto等）：[gokits](https://github.com/xtfly/gokits)
  * 配置（YAML）：[yaml.v2](https://gopkg.in/yaml.v2)
 
@@ -24,21 +24,18 @@ S端与BT的Tracker机制也不一样，它不会维护节点的已下载的文�
 
 ### 下载依赖与GoFD
 
-    go get github.com/labstack/echo
-    go get github.com/labstack/gommon
-    go get github.com/valyala/fasthttp
-    go get golang.org/x/net # 需要翻墙或git clone github.com/golang/net
-    go get github.com/dgrijalva/jwt-go
-    go get github.com/cihub/seelog
-    go get gopkg.in/yaml.v2
-    go get github.com/xtfly/gokits
-    go get github.com/xtfly/gofd
+本工程采用`go mod`来管理第三方依赖
+
+```
+export GOPROXY=https://goproxy.cn
+go get github.com/xtfly/gofd
+```
 
 ### 修改配置
 
 #### 配置日志
 
-日志是采用seelog开源库，配置格式参考[seelog format](https://github.com/cihub/seelog/wiki/Formatting)。
+日志是采用[log4g](https://github.com/xtfly/log4g) 。
 
 #### 配置Server与Agent
 
@@ -46,7 +43,11 @@ GoFD的Server与Agent的配置采用Yaml格式，其中涉及到文件路径需�
 
 ```
 name: server #名称
-log: /Users/xiao/gofd/config/log.xml #日志配置文件绝对路径
+<<<<<<< HEAD
+log: /Users/xiao/gofd/config/log4g.yaml #可选，日志配置文件绝对路径
+=======
+log: /Users/xiao/gofd/config/log.xml #可选，日志配置文件绝对路径
+>>>>>>> 33e1544161da44b669886b6c2204d93335469d47
 net:
     ip: 127.0.0.1 #监听的IP
     mgntPort: 45000 #管理端口，用于接收客户端的创建任务等Rest接口
@@ -58,9 +59,8 @@ net:
         key: /Users/xiao/server.key
 auth:
     username: gofd #管理端口与数据端口用于认证的用户名
-    passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= #管理端口与数据端口用于认证的密码
+    password: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= #管理端口与数据端口用于认证的密码
     factor: 9427e80d # passwd加密密钥因子
-    crc: 63F7  # passwd加密密钥因子的校验码
 control:
     speed: 10  # 流量控制，单位为MBps
     cacheSize: 50 # 文件下载的内存缓存大小，单位为MB
@@ -72,7 +72,7 @@ Agent配置样例如下，其中Agent需要配置`downdir`，用于存放下载�
 ```
 name: agent
 downdir: /Users/xiao/download
-log: /Users/xiao/Go/src/github.com/xtfly/gofd/config/log.xml
+log: /Users/xiao/config/log4g.yaml
 net:
     ip: 127.0.0.1
     mgntPort: 45010
@@ -82,9 +82,8 @@ net:
         key: /Users/xiao/server.key
 auth:
     username: gofd
-    passowrd: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= 
+    password: yrsK+2iiwPqecImH7obTUm1vhnvvQzFmYYiOz5oqaoc= 
     factor: 9427e80d
-    crc: 63F7
 control:
     cacheSize: 50 # unit is MB
     maxActive: 10
@@ -94,7 +93,6 @@ control:
 
     $ gofd -p gofd
     factor = 28711f5d
-    crc = 3084
     stxt = BkrjWALvWhXrLjVXQMUDzyEcX7UpAdDG+uoedDOfeVo=
 
 ### 启动Server

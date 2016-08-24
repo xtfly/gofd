@@ -16,12 +16,15 @@ type osFile struct {
 	filePath string
 }
 
+// OsFsProvider ...
 type OsFsProvider struct{}
 
+// NewFS ...
 func (o OsFsProvider) NewFS() (fs FileSystem, err error) {
 	return &osFileSystem{}, nil
 }
 
+// Open ...
 func (o *osFileSystem) Open(name []string, length int64) (file File, err error) {
 	cleanSrcPath := path.Clean(path.Join(name...))
 	fullPath := path.Join(cleanSrcPath)
@@ -35,10 +38,12 @@ func (o *osFileSystem) Open(name []string, length int64) (file File, err error) 
 	return
 }
 
+// Close ...
 func (o *osFileSystem) Close() error {
 	return nil
 }
 
+// Close ...
 func (o *osFile) Close() (err error) {
 	return
 }
@@ -83,6 +88,7 @@ func (o *osFile) ensureExists(length int64) (err error) {
 	return
 }
 
+// ReadAt ...
 func (o *osFile) ReadAt(p []byte, off int64) (n int, err error) {
 	file, err := os.OpenFile(o.filePath, os.O_RDWR, 0600)
 	if err != nil {
@@ -92,6 +98,7 @@ func (o *osFile) ReadAt(p []byte, off int64) (n int, err error) {
 	return file.ReadAt(p, off)
 }
 
+// WriteAt ...
 func (o *osFile) WriteAt(p []byte, off int64) (n int, err error) {
 	file, err := os.OpenFile(o.filePath, os.O_RDWR, 0600)
 	if err != nil {
